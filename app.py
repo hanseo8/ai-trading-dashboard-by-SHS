@@ -128,9 +128,9 @@ col5.metric("마지막 갱신", datetime.now().strftime("%H:%M:%S"))
 
 with st.sidebar:
     st.subheader("설정")
-    timeframe = st.selectbox("타임프레임", ["15m", "1h", "4h", "1d"], index=1)
+    timeframe = st.selectbox("타임프레임", ["5m", "15m", "1h", "4h", "1d"], index=1)
     top_n = st.slider("스캔 개수", min_value=5, max_value=50, value=20, step=5)
-    vol_mult = st.slider("거래량 조건(이동평균 대비 배수)", 1.0, 5.0, 2.0, 0.1)
+    vol_mult = st.slider("거래량 조건(이동평균 대비 배수)", 1.0, 5.0, 1.1, 0.1) # 기본값 1.1로 완화
     wpr_level = st.slider("WPR 기준선(과매도 탈출)", -95, -50, -85, 1)
     st.caption("데이터는 바이낸스 공개 시세(지연/누락 가능).")
     
@@ -201,21 +201,24 @@ for i, symbol in enumerate(top_symbols, start=1):
         if atr > atr_ma:
             is_aggressive = True
 
-    # 하나라도 해당되면 표시
-    if is_conservative or is_neutral or is_aggressive:
-        common_data = {
-            "종목": symbol,
-            "현재가": float(last["close"]),
-            "WPR": round(float(last["wpr"]), 2),
-            "RSI": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
-        }
-        
-        if is_conservative:
-            status_data.append({**common_data, "전략": "🛡️ 보수적", "신호": "안전 진입"})
-        if is_neutral:
-            status_data.append({**common_data, "전략": "⚖️ 중립적", "신호": "추세 확인"})
-        if is_aggressive:
-            status_data.append({**common_data, "전략": "⚔️ 공격적", "신호": "변동성 돌파"})
+    # 하나라도 해당되면 표시 (또는 전체 리스트에 포함)
+    strategy_label = "관망"
+    if is_conservative: strategy_label = "🛡️ 보수적"
+    elif is_neutral: strategy_label = "⚖️ 중립적"
+    elif is_aggressive: strategy_label = "⚔️ 공격적"
+    
+    # 공통 데이터 추가 (모든 종목 포함)
+    status_data.append({
+        "종목": symbol,
+        "현재가": float(last["close"]),
+        "WPR": round(float(last["wpr"]), 2),
+        "RSI": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
+        "전략": strategy_label if (is_conservative or is_neutral or is_aggressive) else "-",
+        "신호": "진입 가능" if (is_conservative or is_neutral or is_aggressive) else "대기",
+        "is_conservative": is_conservative,
+        "is_neutral": is_neutral,
+        "is_aggressive": is_aggressive
+    })
 
     # 모의 매수 (어떤 전략이든 강력 신호면 매수)
     buy_msg = None
@@ -232,33 +235,47 @@ for i, symbol in enumerate(top_symbols, start=1):
 progress.empty()
 
 # 탭으로 분리하여 표시
-tab1, tab2, tab3 = st.tabs(["🛡️ 보수적 (안전)", "⚖️ 중립적 (정확)", "⚔️ 공격적 (수익)"])
+tab_all, tab1, tab2, tab3 = st.tabs(["📋 전체 (요약)", "🛡️ 보수적", "⚖️ 중립적", "⚔️ 공격적"])
 
 df_all = pd.DataFrame(status_data)
 
-def show_strategy_list(strategy_name):
+def show_strategy_list(strategy_type=None):
     if df_all.empty:
         st.info("검색된 종목이 없습니다.")
         return
     
-    subset = df_all[df_all["전략"] == strategy_name].copy()
-    if subset.empty:
-        st.warning(f"'{strategy_name}' 조건에 맞는 종목이 없습니다.")
+    if strategy_type == "ALL":
+        subset = df_all.copy()
+    elif strategy_type == "Bo":
+        subset = df_all[df_all["is_conservative"] == True].copy()
+    elif strategy_type == "Nu":
+        subset = df_all[df_all["is_neutral"] == True].copy()
+    elif strategy_type == "Ag":
+        subset = df_all[df_all["is_aggressive"] == True].copy()
     else:
-        # 중복 제거 (한 종목이 여러 전략에 걸릴 수 있음 -> 리스트에는 각각 표시됨)
-        # 보기 좋게 포맷
-        subset["현재가"] = subset["현재가"].map(fmt_price)
-        st.dataframe(subset, use_container_width=True, hide_index=True)
+        return
 
+    if subset.empty:
+        st.warning(f"조건에 맞는 종목이 없습니다.")
+    else:
+        # 보기 좋게 포맷 column cleaning
+        view_cols = ["종목", "현재가", "WPR", "RSI", "전략", "신호"]
+        subset_view = subset[view_cols].copy()
+        subset_view["현재가"] = subset_view["현재가"].map(fmt_price)
+        st.dataframe(subset_view, use_container_width=True, hide_index=True)
+
+with tab_all:
+    st.caption("스캔된 모든 종목의 상태를 보여줍니다.")
+    show_strategy_list("ALL")
 with tab1:
     st.caption("볼린저 밴드 내부에서 안정적인 상승을 노립니다 (과열 종목 제외).")
-    show_strategy_list("🛡️ 보수적")
+    show_strategy_list("Bo")
 with tab2:
     st.caption("MACD 모멘텀이 살아있는 확실한 추세를 따릅니다.")
-    show_strategy_list("⚖️ 중립적")
+    show_strategy_list("Nu")
 with tab3:
     st.caption("변동성(ATR)이 확대되는 구간에서 큰 수익을 노립니다.")
-    show_strategy_list("⚔️ 공격적")
+    show_strategy_list("Ag")
 
 # 포트폴리오 상세
 st.divider()
@@ -286,77 +303,76 @@ with st.sidebar:
 st.divider()
 st.subheader("📊 상세 차트")
 
-if df_status.empty:
+if df_all.empty:
     st.info("먼저 스캔 결과가 있어야 상세 차트를 볼 수 있어요.")
-    st.stop()
+    # 데이터가 없을 때 스톱하지 않고 그냥 메시지만 띄움 (화면 전체가 죽는 것 방지)
+else:
+    selected_coin = st.selectbox("상세 차트 분석", df_all["종목"].tolist())
+    df_chart = get_data(selected_coin, timeframe=timeframe, limit=300)
+    if df_chart is None:
+        st.error("해당 종목의 차트 데이터를 불러오지 못했습니다.")
+    else:
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            row_heights=[0.7, 0.3],
+            vertical_spacing=0.03,
+            subplot_titles=("Price", "RSI(14)"),
+        )
 
-selected_coin = st.selectbox("상세 차트 분석", df_status["종목"].tolist())
-df_chart = get_data(selected_coin, timeframe=timeframe, limit=300)
-if df_chart is None:
-    st.error("해당 종목의 차트 데이터를 불러오지 못했습니다.")
-    st.stop()
+        fig.add_trace(
+            go.Candlestick(
+                x=df_chart["timestamp"],
+                open=df_chart["open"],
+                high=df_chart["high"],
+                low=df_chart["low"],
+                close=df_chart["close"],
+                name="Price",
+            ),
+            row=1,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(x=df_chart["timestamp"], y=df_chart["ema7"], name="EMA 7", line=dict(color="orange")),
+            row=1,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(x=df_chart["timestamp"], y=df_chart["ema25"], name="EMA 25", line=dict(color="blue")),
+            row=1,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(x=df_chart["timestamp"], y=df_chart["ema99"], name="EMA 99", line=dict(color="red", width=2)),
+            row=1,
+            col=1,
+        )
 
-fig = make_subplots(
-    rows=2,
-    cols=1,
-    shared_xaxes=True,
-    row_heights=[0.7, 0.3],
-    vertical_spacing=0.03,
-    subplot_titles=("Price", "RSI(14)"),
-)
+        # RSI 하단 보조지표
+        if "rsi14" in df_chart.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=df_chart["timestamp"],
+                    y=df_chart["rsi14"],
+                    name="RSI(14)",
+                    line=dict(color="#00cc96"),
+                ),
+                row=2,
+                col=1,
+            )
+            # 30 / 70 레벨선
+            fig.add_hline(y=30, line_dash="dash", line_color="gray", row=2, col=1)
+            fig.add_hline(y=70, line_dash="dash", line_color="gray", row=2, col=1)
+            fig.update_yaxes(range=[0, 100], row=2, col=1)
 
-fig.add_trace(
-    go.Candlestick(
-        x=df_chart["timestamp"],
-        open=df_chart["open"],
-        high=df_chart["high"],
-        low=df_chart["low"],
-        close=df_chart["close"],
-        name="Price",
-    ),
-    row=1,
-    col=1,
-)
-fig.add_trace(
-    go.Scatter(x=df_chart["timestamp"], y=df_chart["ema7"], name="EMA 7", line=dict(color="orange")),
-    row=1,
-    col=1,
-)
-fig.add_trace(
-    go.Scatter(x=df_chart["timestamp"], y=df_chart["ema25"], name="EMA 25", line=dict(color="blue")),
-    row=1,
-    col=1,
-)
-fig.add_trace(
-    go.Scatter(x=df_chart["timestamp"], y=df_chart["ema99"], name="EMA 99", line=dict(color="red", width=2)),
-    row=1,
-    col=1,
-)
+        fig.update_layout(
+            height=700,
+            margin=dict(l=10, r=10, t=30, b=10),
+            xaxis_rangeslider_visible=False,
+        )
 
-# RSI 하단 보조지표
-if "rsi14" in df_chart.columns:
-    fig.add_trace(
-        go.Scatter(
-            x=df_chart["timestamp"],
-            y=df_chart["rsi14"],
-            name="RSI(14)",
-            line=dict(color="#00cc96"),
-        ),
-        row=2,
-        col=1,
-    )
-    # 30 / 70 레벨선
-    fig.add_hline(y=30, line_dash="dash", line_color="gray", row=2, col=1)
-    fig.add_hline(y=70, line_dash="dash", line_color="gray", row=2, col=1)
-    fig.update_yaxes(range=[0, 100], row=2, col=1)
-
-fig.update_layout(
-    height=700,
-    margin=dict(l=10, r=10, t=30, b=10),
-    xaxis_rangeslider_visible=False,
-)
-
-st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
 
 
 # 자동 갱신 로직 (마지막에 위치)
