@@ -3,6 +3,7 @@ import ccxt
 import pandas as pd
 import pandas_ta as ta
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from datetime import datetime
 from typing import Optional
 import time
@@ -16,7 +17,17 @@ st.set_page_config(page_title="은둔고수 트레이딩 보드", layout="wide")
 
 @st.cache_resource
 def get_exchange() -> ccxt.Exchange:
-    ex = ccxt.binance({"enableRateLimit": True})
+    # 바이낸스 공식 대체 엔드포인트 + 레이트 리밋 활성화
+    ex = ccxt.binance(
+        {
+            "enableRateLimit": True,
+            "urls": {
+                "api": {
+                    "public": "https://api3.binance.com/api/v3",
+                }
+            },
+        }
+    )
     # 공개 데이터만 사용 (키 불필요)
     return ex
 
@@ -41,6 +52,7 @@ def get_data(symbol: str, timeframe: str = "1h", limit: int = 200) -> Optional[p
         df["ema99"] = ta.ema(df["close"], length=99)
         df["wpr"] = ta.willr(df["high"], df["low"], df["close"], length=14)
         df["vol_ma"] = ta.sma(df["volume"], length=10)
+        df["rsi14"] = ta.rsi(df["close"], length=14)
 
         # 결측치가 있는 초기 구간 제거(지표 안정화)
         df = df.dropna().reset_index(drop=True)
@@ -73,11 +85,18 @@ def safe_quote_volume(markets: dict, symbol: str) -> float:
 
 # 상단 헤더
 st.title("📈 AI 자동매매 실시간 상황판")
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("오늘의 목표 수익", "150,000원")
-col2.metric("현재 운용 시드", "100 USDT")
-col3.metric("알고리즘 상태", "정상 작동 중", delta="Active")
-col4.metric("마지막 갱신", datetime.now().strftime("%H:%M:%S"))
+
+# 목표 수익 / 달성률 설정 (임시: 실현 손익 0 기준)
+TARGET_PROFIT_USDT = 100.0
+current_profit_usdt = 0.0  # TODO: 실제 실현 손익 연동 가능
+achievement_rate = (current_profit_usdt / TARGET_PROFIT_USDT * 100.0) if TARGET_PROFIT_USDT > 0 else 0.0
+
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("오늘의 목표 수익", f"{TARGET_PROFIT_USDT:.0f} USDT")
+col2.metric("달성률", f"{achievement_rate:.1f}%")
+col3.metric("현재 운용 시드", "100 USDT")
+col4.metric("알고리즘 상태", "정상 작동 중", delta="Active")
+col5.metric("마지막 갱신", datetime.now().strftime("%H:%M:%S"))
 
 
 with st.sidebar:
@@ -131,6 +150,7 @@ for i, symbol in enumerate(top_symbols, start=1):
             "종목": symbol,
             "현재가": float(last["close"]),
             "Williams %R": round(float(last["wpr"]), 2),
+            "RSI(14)": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
             "거래량 비율": f"{round(vol_ratio, 1)}배" if vol_ratio is not None else "-",
             "신호": signal,
         }
@@ -164,7 +184,15 @@ if df_chart is None:
     st.error("해당 종목의 차트 데이터를 불러오지 못했습니다.")
     st.stop()
 
-fig = go.Figure()
+fig = make_subplots(
+    rows=2,
+    cols=1,
+    shared_xaxes=True,
+    row_heights=[0.7, 0.3],
+    vertical_spacing=0.03,
+    subplot_titles=("Price", "RSI(14)"),
+)
+
 fig.add_trace(
     go.Candlestick(
         x=df_chart["timestamp"],
@@ -173,17 +201,46 @@ fig.add_trace(
         low=df_chart["low"],
         close=df_chart["close"],
         name="Price",
-    )
+    ),
+    row=1,
+    col=1,
 )
-fig.add_trace(go.Scatter(x=df_chart["timestamp"], y=df_chart["ema7"], name="EMA 7", line=dict(color="orange")))
-fig.add_trace(go.Scatter(x=df_chart["timestamp"], y=df_chart["ema25"], name="EMA 25", line=dict(color="blue")))
 fig.add_trace(
-    go.Scatter(x=df_chart["timestamp"], y=df_chart["ema99"], name="EMA 99", line=dict(color="red", width=2))
+    go.Scatter(x=df_chart["timestamp"], y=df_chart["ema7"], name="EMA 7", line=dict(color="orange")),
+    row=1,
+    col=1,
+)
+fig.add_trace(
+    go.Scatter(x=df_chart["timestamp"], y=df_chart["ema25"], name="EMA 25", line=dict(color="blue")),
+    row=1,
+    col=1,
+)
+fig.add_trace(
+    go.Scatter(x=df_chart["timestamp"], y=df_chart["ema99"], name="EMA 99", line=dict(color="red", width=2)),
+    row=1,
+    col=1,
 )
 
+# RSI 하단 보조지표
+if "rsi14" in df_chart.columns:
+    fig.add_trace(
+        go.Scatter(
+            x=df_chart["timestamp"],
+            y=df_chart["rsi14"],
+            name="RSI(14)",
+            line=dict(color="#00cc96"),
+        ),
+        row=2,
+        col=1,
+    )
+    # 30 / 70 레벨선
+    fig.add_hline(y=30, line_dash="dash", line_color="gray", row=2, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color="gray", row=2, col=1)
+    fig.update_yaxes(range=[0, 100], row=2, col=1)
+
 fig.update_layout(
-    height=600,
-    margin=dict(l=10, r=10, t=10, b=10),
+    height=700,
+    margin=dict(l=10, r=10, t=30, b=10),
     xaxis_rangeslider_visible=False,
 )
 
