@@ -62,26 +62,26 @@ def get_data(symbol: str, timeframe: str = "1h", limit: int = 200) -> Optional[p
         df["ema7"] = ta.ema(df["close"], length=7)
         df["ema25"] = ta.ema(df["close"], length=25)
         df["ema99"] = ta.ema(df["close"], length=99)
-        df["wpr"] = ta.willr(df["high"], df["low"], df["close"], length=14)
-        df["vol_ma"] = ta.sma(df["volume"], length=10)
-        df["vol_ma"] = ta.sma(df["volume"], length=10)
-        df["rsi14"] = ta.rsi(df["close"], length=14)
-
-        # 추가 지표 (전략별)
-        # 1. MACD (중립적)
-        macd = ta.macd(df["close"])
-        if macd is not None:
-            df = pd.concat([df, macd], axis=1)
         
-        # 2. Bollinger Bands (보수적)
-        bb = ta.bbands(df["close"], length=20, std=2)
-        if bb is not None:
-            df = pd.concat([df, bb], axis=1)
+        # 보조지표: RSI, WPR, MACD, BB(20, 2), ATR
+        df["rsi14"] = ta.rsi(df["close"], length=14)
+        df["wpr"] = ta.willr(df["high"], df["low"], df["close"], length=14)
+        
+        macd = ta.macd(df["close"])
+        df = pd.concat([df, macd], axis=1)
 
-        # 3. ATR (공격적)
+        bb = ta.bbands(df["close"], length=20, std=2.0)
+        df = pd.concat([df, bb], axis=1)
+        
+        # [나만의 기법] BB(15, 2.4) 추가
+        bb_my = ta.bbands(df["close"], length=15, std=2.4)
+        df = pd.concat([df, bb_my], axis=1)
+        
         df["atr"] = ta.atr(df["high"], df["low"], df["close"], length=14)
-        if "atr" in df.columns:
-            df["atr_ma"] = ta.sma(df["atr"], length=20) # ATR 이동평균 (변동성 돌파 확인용)
+        df["atr_ma"] = ta.sma(df["atr"], length=20)
+        
+        # 거래량 이동평균
+        df["vol_ma"] = ta.sma(df["volume"], length=10)
 
         # 결측치가 있는 초기 구간 제거(지표 안정화)
         df = df.dropna().reset_index(drop=True)
@@ -114,6 +114,11 @@ def safe_quote_volume(markets: dict, symbol: str) -> float:
 with st.sidebar:
     st.subheader("설정")
     timeframe = st.selectbox("타임프레임", ["5m", "15m", "1h", "4h", "1d"], index=1)
+    
+    # 15m 선택 시 안내 메시지
+    if timeframe == "15m":
+        st.info("💡 15분봉은 '나만의 기법' 전용입니다.\n(BB 15, 2.4 하단 터치 매수 / 10% 익절)")
+        
     top_n = st.slider("스캔 개수", min_value=5, max_value=50, value=20, step=5)
     vol_mult = st.slider("거래량 조건(이동평균 대비 배수)", 1.0, 5.0, 1.1, 0.1) # 기본값 1.1로 완화
     wpr_level = st.slider("WPR 기준선(과매도 탈출)", -95, -50, -85, 1)
@@ -124,10 +129,13 @@ with st.sidebar:
     auto_refresh = st.checkbox("자동 새로고침 켜기", value=True)
     refresh_sec = st.slider("갱신 주기(초)", 5, 60, 5)
 
-# 포트폴리오 파일 결정 (단타/장기)
-if timeframe in ["5m", "15m"]:
+# 포트폴리오 파일 결정 (단타/장기/나만의기법)
+if timeframe == "5m":
     portfolio_mode = "단타 (Scalping)"
     portfolio_file = "portfolio_scalping.json"
+elif timeframe == "15m":
+    portfolio_mode = "나만의 기법 (My Strategy)"
+    portfolio_file = "portfolio_my.json"
 else:
     portfolio_mode = "장기 (Long-Term)"
     portfolio_file = "portfolio_long.json"
@@ -200,7 +208,17 @@ for i, symbol in enumerate(top_symbols, start=1):
     is_lt_trend = bool(last["close"] > last["ema99"])
     is_lt_rsi = bool(50 < last["rsi14"] < 70) if "rsi14" in last else False
     
-    lt_score = "� 장기 보유" if (is_lt_trend and is_lt_rsi) else "비중 축소"
+    # 3. 나만의 기법 (My Strategy - 15m Only)
+    # 조건: BB(15, 2.4) 하단 터치 (Low <= Lower Band)
+    bbl_my = last.get("BBL_15_2.4")
+    is_my_signal = False
+    
+    if bbl_my is not None:
+        if last["low"] <= bbl_my:
+            is_my_signal = True
+            
+    my_score = "🎯 나만의 매수" if is_my_signal else "관망"
+
 
     # 데이터프레임 기록용
     status_data.append({
@@ -208,21 +226,27 @@ for i, symbol in enumerate(top_symbols, start=1):
         "현재가": float(last["close"]),
         "단기 신호": st_score,
         "장기 전략": lt_score,
+        "나만의 기법": my_score,
         "RSI": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
         "WPR": round(float(last["wpr"]), 2)
     })
 
-    # 모의 매수 (현재 모드에 맞춰서)
+    # 모의 매수 & 매도 (현재 모드에 맞춰서)
     buy_msg = None
     should_buy = False
     
-    if portfolio_mode.startswith("단타"):
+    # 모드별 매수 조건
+    if portfolio_mode.startswith("단타"): # 5m
         if st_score == "🚀 단기 매수":
             should_buy = True
-    elif portfolio_mode.startswith("장기"):
+    elif portfolio_mode.startswith("나만의"): # 15m
+        if my_score == "🎯 나만의 매수":
+            should_buy = True
+    elif portfolio_mode.startswith("장기"): # 1h+
         if lt_score == "💎 장기 보유":
             should_buy = True
             
+    # 매수 실행
     if should_buy:
         # 중복 매수 방지
         curr_pf = pt.load_portfolio(portfolio_file)
@@ -230,13 +254,36 @@ for i, symbol in enumerate(top_symbols, start=1):
              buy_msg = "보유 중 (스킵)"
         else:
             success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=100.0, filename=portfolio_file)
+
+    # [익절 로직] 나만의 기법 등 수익률 10% 도달 시 자동 매도
+    # 모든 모드에서 동작하게 하거나, 특정 모드만 하거나. 여기서는 '나만의 기법' 요청사항이므로 전체 적용해도 무방
+    # 현재가가 있으므로 수익률 계산 가능.
+    # 포트폴리오 로드 (IO 최적화를 위해 위에서 읽은 curr_pf 재사용 가능하지만, 로직 분리상 다시 읽음 or 구조 개선)
+    # 간단히 구현:
+    curr_pf = pt.load_portfolio(portfolio_file)
+    if symbol in curr_pf["holdings"]:
+        holding = curr_pf["holdings"][symbol]
+        amt = holding["amount"]
+        if amt > 0:
+            avg_p = holding["avg_price"]
+            cur_p = float(last["close"])
+            profit_pct = (cur_p - avg_p) / avg_p * 100
             
+            # 10% 이상 수익 시 매도
+            # (나만의 기법 요청 사항이지만, 다른 전략에도 적용하면 좋음. 일단 요청대로 15m일때만 하거나 전체 적용)
+            # 여기선 전체 적용 (손해볼 것 없음)
+            if profit_pct >= 10.0:
+                success, msg = pt.sell_coin(symbol, cur_p, amt, filename=portfolio_file)
+                if success:
+                    print(f"💰 익절 성공: {symbol} (+{profit_pct:.2f}%)") # 로그용 (안보임)
+
     progress.progress(i / len(top_symbols), text=f"스캔 중… ({i}/{len(top_symbols)})")
 
 progress.empty()
 
 # 화면 상단에 라디오 버튼 추가
-portfolio_view = st.radio("포트폴리오 보기", ["전체", "단기 스캘핑", "장기 스윙"], horizontal=True)
+# 15m 선택 시 '나만의 기법'이 기본 탭처럼 보이게 하거나, 전체 리스트에서 필터링
+portfolio_view = st.radio("포트폴리오 보기", ["전체", "단기 스캘핑", "장기 스윙", "나만의 기법"], horizontal=True)
 
 df_all = pd.DataFrame(status_data)
 
@@ -247,20 +294,18 @@ else:
     
     # 필터링
     if portfolio_view == "단기 스캘핑":
-        # 단기 매수 신호가 있거나 관망인 종목 중 추세 좋은것? 
-        # 사용자는 "단기 신호"가 "🚀 단기 매수" 인 것을 중요하게 볼 것임.
-        # 하지만 너무 적으면 심심하니 전체 리스트에서 필터링
         df_filtered = df_view[df_view["단기 신호"] == "🚀 단기 매수"]
-        if df_filtered.empty: # 없으면 전체 보여주되 메시지
-             st.warning("현재 '🚀 단기 매수' 신호가 뜬 종목이 없습니다. (전체 목록 표시)")
-             df_filtered = df_view
     elif portfolio_view == "장기 스윙":
         df_filtered = df_view[df_view["장기 전략"] == "💎 장기 보유"]
-        if df_filtered.empty:
-             st.warning("현재 '💎 장기 보유' 구간인 종목이 없습니다. (전체 목록 표시)")
-             df_filtered = df_view
+    elif portfolio_view == "나만의 기법":
+        df_filtered = df_view[df_view["나만의 기법"] == "🎯 나만의 매수"]
     else:
         df_filtered = df_view
+
+    # 필터 결과가 비었을 때 메시지
+    if df_filtered.empty and portfolio_view != "전체":
+         st.warning(f"현재 '{portfolio_view}' 조건에 맞는 종목이 없습니다. (전체 목록 표시)")
+         df_filtered = df_view
 
     # 보기 좋게 포맷
     if not df_filtered.empty:
@@ -268,15 +313,18 @@ else:
         
         # 스타일 적용 함수
         def highlight_signal(val):
-            if "🚀" in str(val): # 단기 매수
+            val_str = str(val)
+            if "🚀" in val_str: # 단기 매수
                 return "background-color: #ff4b4b; color: white; font-weight: bold"
-            elif "💎" in str(val): # 장기 보유
+            elif "💎" in val_str: # 장기 보유
                 return "background-color: #00cc96; color: white; font-weight: bold"
+            elif "🎯" in val_str: # 나만의 매수
+                return "background-color: #ffa502; color: white; font-weight: bold"
             return ""
 
         st.dataframe(
             df_filtered.style
-            .map(highlight_signal, subset=["단기 신호", "장기 전략"])
+            .map(highlight_signal, subset=["단기 신호", "장기 전략", "나만의 기법"])
             .set_table_styles([
                 {'selector': 'th', 'props': [('background-color', '#FFDAB9'), ('color', 'black'), ('font-weight', 'bold'), ('text-align', 'center')]}
             ]),

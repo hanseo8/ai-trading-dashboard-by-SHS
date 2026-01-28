@@ -114,6 +114,45 @@ def get_portfolio_status(current_prices: dict, filename=PORTFOLIO_FILE):
         "details": details
     }
 
+def sell_coin(symbol: str, price: float, amount: float, filename=PORTFOLIO_FILE):
+    """코인 매도"""
+    pf = load_portfolio(filename)
+    
+    if symbol not in pf["holdings"]:
+        return False, "보유하지 않은 코인"
+        
+    holding = pf["holdings"][symbol]
+    current_amount = holding["amount"]
+    
+    if current_amount < amount:
+        return False, "보유 수량 부족"
+        
+    # 매도 금액
+    sell_value = amount * price
+    
+    # 잔액 증가
+    pf["balance"] += sell_value
+    
+    # 보유량 차감
+    holding["amount"] -= amount
+    
+    # 전량 매도 시 목록에서 제거 (또는 수량 0 유지)
+    if holding["amount"] <= 0.00000001: # 부동소수점 오차 고려
+        del pf["holdings"][symbol]
+    
+    # 기록 (매도)
+    pf["history"].append({
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "type": "sell",
+        "symbol": symbol,
+        "price": price,
+        "amount": amount,
+        "total": sell_value
+    })
+    
+    save_portfolio(pf, filename)
+    return True, "매도 성공"
+
 def reset_portfolio(filename=PORTFOLIO_FILE):
     """포트폴리오 초기화"""
     if os.path.exists(filename):
