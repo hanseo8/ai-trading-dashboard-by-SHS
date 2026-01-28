@@ -25,7 +25,9 @@ def get_exchange() -> ccxt.Exchange:
         },
         "urls": {
             "api": {
-                "public": "https://data-api.binance.vision/api/v3", # 공용 데이터 API (국가 제한 우회 가능성 높음)
+                "public": "https://data-api.binance.vision/api/v3",
+                "fapiPublic": "https://data-api.binance.vision/api/v3", # 퓨처스 접속 차단 (우회)
+                "fapi": "https://data-api.binance.vision/api/v3",       # 퓨처스 접속 차단 (우회)
             }
         },
         "timeout": 30000, # 응답 대기 시간 연장
