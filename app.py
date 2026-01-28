@@ -149,7 +149,7 @@ with st.sidebar:
         portfolio_file = "portfolio_long.json"
         portfolio_label = "장기 (Long-Term)"
         default_vol = 1.1 # 스윙은 널널하게
-        st.info("💎 스윙 전략 (1h~1d)\n• 조건: 장기 추세(EMA99) + RSI 안정권(50~70)\n• 목표: 추세가 꺾일 때까지 장기 보유")
+        st.info("💎 스윙 전략 (1h-1d)\n• 조건: 장기 추세(EMA99) + RSI 안정권(50~70)\n• 목표: 추세가 꺾일 때까지 장기 보유")
         
     else: # 고수의 기법
         timeframe = st.selectbox("타임프레임", ["15m"], index=0)
@@ -370,9 +370,21 @@ for i, symbol in enumerate(top_symbols, start=1):
                 elif last["ema7"] < prev["ema7"]:
                     should_sell = True
                     sell_reason = "손절 (EMA7 하락)"
-            else:
-                # 고수 / 장기 등: 기존 10% 룰 (또는 고수는 더 길게? 일단 10% 유지)
-                if profit_pct >= 10.0:
+                    should_sell = True
+                    sell_reason = "손절 (EMA7 하락)"
+            
+            elif portfolio_mode.startswith("장기"): # 스윙 (추세 추종)
+                # 설명대로 "추세가 꺾일 때까지" 보유
+                # 추세 기준: Price < EMA99 (상승 추세 이탈)
+                if last["close"] < last["ema99"]:
+                     should_sell = True
+                     sell_reason = "매도 (추세 이탈 EMA99)"
+                # (옵션) 익절 없음? 혹은 매우 큰 익절(50%?)
+                # 일단 추세 꺾임만 봅니다.
+                
+            else: # 고수의 기법
+                 # 고수는 10% 룰 (또는 그 이상?) -> 기존 10% 유지
+                 if profit_pct >= 10.0:
                     should_sell = True
                     sell_reason = "익절 (10%)"
 
