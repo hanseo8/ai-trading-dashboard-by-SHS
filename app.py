@@ -9,6 +9,7 @@ from typing import Optional
 import time
 import math
 import requests
+import paper_trading as pt
 
 
 # 페이지 설정
@@ -96,11 +97,15 @@ TARGET_PROFIT_USDT = 100.0
 current_profit_usdt = 0.0  # TODO: 실제 실현 손익 연동 가능
 achievement_rate = (current_profit_usdt / TARGET_PROFIT_USDT * 100.0) if TARGET_PROFIT_USDT > 0 else 0.0
 
+# 포트폴리오 로드
+current_prices = {} # 현재가 수집용
+portfolio = pt.get_portfolio_status(current_prices)
+
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("오늘의 목표 수익", f"{TARGET_PROFIT_USDT:.0f} USDT")
 col2.metric("달성률", f"{achievement_rate:.1f}%")
-col3.metric("현재 운용 시드", "100 USDT")
-col4.metric("알고리즘 상태", "정상 작동 중", delta="Active")
+col3.metric("모의투자 평가금액", f"{portfolio['total_asset']:,.2f} USDT", delta=f"{portfolio['total_pnl']:,.2f} ({portfolio['total_pnl_pct']:.2f}%)")
+col4.metric("잔액(예수금)", f"{portfolio['balance']:,.2f} USDT")
 col5.metric("마지막 갱신", datetime.now().strftime("%H:%M:%S"))
 
 
@@ -145,6 +150,15 @@ for i, symbol in enumerate(top_symbols, start=1):
     is_vol = bool(last["volume"] > (last["vol_ma"] * float(vol_mult)))
 
     signal = "🚀 강력 매수" if (is_trend and is_wpr and is_vol) else "관망"
+    
+    # 모의 매수 (강력 매수 시)
+    buy_msg = None
+    if signal == "🚀 강력 매수":
+        success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=100.0)
+        if success:
+            buy_msg = f"매수 체결! ({symbol} @ {last['close']})"
+        else:
+            buy_msg = f"매수 실패: {msg}"
 
     vol_ratio = None
     try:
@@ -175,6 +189,27 @@ else:
     df_view = df_status.copy()
     df_view["현재가"] = df_view["현재가"].map(fmt_price)
     st.dataframe(df_view, use_container_width=True, hide_index=True)
+
+# 포트폴리오 상세
+st.divider()
+st.subheader("💼 내 포트폴리오 (모의투자)")
+
+# 현재가 갱신을 위해 스캔된 데이터 활용 (또는 별도 조회 필요)
+# 위 루프에서 현재가가 있다면 업데이트
+for d in status_data:
+    current_prices[d["종목"]] = d["현재가"]
+
+portfolio_updated = pt.get_portfolio_status(current_prices)
+if not portfolio_updated["details"]:
+    st.info("보유 중인 코인이 없습니다.")
+else:
+    df_pf = pd.DataFrame(portfolio_updated["details"])
+    st.dataframe(df_pf, use_container_width=True, hide_index=True)
+
+with st.sidebar:
+    if st.button("포트폴리오 초기화"):
+        pt.reset_portfolio()
+        st.rerun()
 
 
 # 상세 차트 보기 (선택한 종목)
