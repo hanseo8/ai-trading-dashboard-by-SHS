@@ -132,24 +132,35 @@ with st.sidebar:
         ["단기 스캘핑 (1m/5m)", "중장기 스윙 (1h~1d)", "고수의 기법 (Triple Confirm)"]
     )
     
+    # 기본값 설정
+    default_vol = 1.1
+    default_wpr = -85
+    
     # 2. 타임프레임 (전략에 종속)
-    if strategy_mode.startswith("단기"):
+    if strategy_mode.startswith("단기"): # 스캘핑
         timeframe = st.selectbox("타임프레임", ["1m", "5m"], index=1)
         portfolio_file = "portfolio_scalping.json"
         portfolio_label = "단타 (Scalping)"
-    elif strategy_mode.startswith("중장기"):
+        default_vol = 2.0 # 스캘핑 기본 2배
+        
+    elif strategy_mode.startswith("중장기"): # 스윙
         timeframe = st.selectbox("타임프레임", ["1h", "4h", "1d"], index=0)
         portfolio_file = "portfolio_long.json"
         portfolio_label = "장기 (Long-Term)"
+        default_vol = 1.1 # 스윙은 널널하게
+        
     else: # 고수의 기법
         timeframe = st.selectbox("타임프레임", ["15m"], index=0)
         portfolio_file = "portfolio_my.json"
         portfolio_label = "고수의 기법 (Triple Confirm)"
-        st.info("💡 15분봉 전용: 추세 + WPR/RSI + 거래량 2.5배")
+        default_vol = 2.5 # 고수는 확실한 거래량
+        st.info("💡 15분봉 전용: 추세 + WPR/RSI + 거래량 폭발")
 
+    # 슬라이더 (key를 설정해서 전략 변경 시 리셋/재설정 되도록 유도하거나, value에 변수 할당)
+    # key에 전략 모드를 포함시켜서 전환 시 새로운 값이 적용되도록 함
     top_n = st.slider("스캔 개수", min_value=5, max_value=50, value=20, step=5)
-    vol_mult = st.slider("거래량 조건(이동평균 대비 배수)", 1.0, 5.0, 1.1, 0.1) # 기본값 1.1로 완화
-    wpr_level = st.slider("WPR 기준선(과매도 탈출)", -95, -50, -85, 1)
+    vol_mult = st.slider("거래량 조건(이동평균 대비 배수)", 1.0, 5.0, default_vol, 0.1, key=f"vol_{strategy_mode}") 
+    wpr_level = st.slider("WPR 기준선(과매도 탈출)", -95, -50, default_wpr, 1, key=f"wpr_{strategy_mode}")
     st.caption("데이터는 바이낸스 공개 시세(지연/누락 가능).")
     
     st.divider()
@@ -237,9 +248,9 @@ for i, symbol in enumerate(top_symbols, start=1):
     is_gc = is_st_trend and (prev["ema7"] <= prev["ema25"]) # 막 크로스
     # 또는 이미 정배열 상태에서 눌림목? User req: "정배열 전환" -> Golden Cross
     
-    # 거래량 실린 양봉 (직전 5개 평균 대비 2배) - last vol > vol_ma5 * 2
-    # 그리고 양봉(Close > Open)
-    is_vol_pump = (last["volume"] > last["vol_ma5"] * 2.0) and (last["close"] > last["open"])
+    # 거래량 실린 양봉 (직전 5개 평균 대비 설정값 배)
+    # 기존 하드코딩 2.0 -> vol_mult 사용
+    is_vol_pump = (last["volume"] > last["vol_ma5"] * vol_mult) and (last["close"] > last["open"])
     
     # RSI 컨펌 (50 상향 돌파 or 50~60 구간 상승)
     is_rsi_up = (last["rsi14"] > 50)
@@ -268,11 +279,11 @@ for i, symbol in enumerate(top_symbols, start=1):
     
     # 단기 눌림목(Trigger): RSI가 40 이하로 떨어졌다가 다시 대가리를 들거나(여기선 단순화), 
     # Williams %R이 -85 바닥을 찍고 탈출하는 순간.
-    # 사용자 요청: WPR -85 기준
-    is_master_wpr = prev["wpr"] < -85 and last["wpr"] > -85
+    # 사용자 요청: WPR -85 기준 (설정값 wpr_level 사용)
+    is_master_wpr = prev["wpr"] < wpr_level and last["wpr"] > wpr_level
     
-    # 거래량 폭발(Confirm): 최근 10개 캔들 평균 거래량보다 2.5배 이상 터지며 상승
-    is_master_vol = last["volume"] > (last["vol_ma"] * 2.5)
+    # 거래량 폭발(Confirm): 설정값 배수 사용 (기존 2.5배 -> vol_mult)
+    is_master_vol = last["volume"] > (last["vol_ma"] * vol_mult)
     
     # RSI 조건 (힘이 실리기 시작함)
     is_master_rsi = last["rsi14"] > 50
