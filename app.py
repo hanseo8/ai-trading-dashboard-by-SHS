@@ -181,92 +181,52 @@ for i, symbol in enumerate(top_symbols, start=1):
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # 1. 기본 추세 확인 (State)
-    # EMA 정배열 (7 > 25 > 99)
+    # --- 전략 판별 로직 ---
+
+    # 1. 단기 전략 (Short-term)
+    # EMA 7/25 골든크로스 + Williams %R 과매도 탈출 (-80 상향 돌파)
+    # is_st_trend: 단기 정배열
     try:
-        is_trend = bool(last["ema7"] > last["ema25"] and last["close"] > last["ema99"])
+        is_st_trend = bool(last["ema7"] > last["ema25"])
     except:
-        is_trend = False
-
-    # 2. 매수 타이밍 포착 (Trigger Event)
-    # WPR 과매도 탈출 + 거래량 증가
-    is_wpr_trigger = bool(prev["wpr"] < wpr_level and last["wpr"] > wpr_level)
-    is_vol_trigger = bool(last["volume"] > (last["vol_ma"] * float(vol_mult)))
-    is_buy_signal = is_wpr_trigger and is_vol_trigger
-
-    # 3. 전략별 적합성 (State)
-    
-    # [보수적] 볼린저 밴드 상단 아래 (안전)
-    bbu = last.get("BBU_20_2.0")
-    bbm = last.get("BBM_20_2.0")
-    is_conservative_fit = False
-    if is_trend and bbu is not None:
-        if last["close"] < bbu: # 밴드 상단보다 아래면 OK (과열 아님)
-            is_conservative_fit = True
-
-    # [중립적] MACD 히스토그램 양수 (상승 모멘텀)
-    hist = last.get("MACDh_12_26_9")
-    is_neutral_fit = False
-    if is_trend and hist is not None:
-        if hist > 0:
-            is_neutral_fit = True
-
-    # [공격적] ATR 변동성 확대
-    atr = last.get("atr")
-    atr_ma = last.get("atr_ma")
-    is_aggressive_fit = False
-    if is_trend and atr is not None and atr_ma is not None:
-        if atr > atr_ma: # 변동성 확대 구간
-            is_aggressive_fit = True
-
-    # 4. 결과 판정
-    # 전략에 맞으면 일단 리스트에는 올림 (관망)
-    # 타이밍까지 맞으면 (매수)
-    
-    strategy_label = "-"
-    signal_label = "대기"
-    
-    # 우선순위: 공격 > 중립 > 보수 (하나만 표시할 경우)
-    active_strategies = []
-    if is_conservative_fit: active_strategies.append("🛡️ 보수적")
-    if is_neutral_fit: active_strategies.append("⚖️ 중립적")
-    if is_aggressive_fit: active_strategies.append("⚔️ 공격적")
-    
-    if active_strategies:
-        strategy_label = ", ".join(active_strategies)
-        signal_label = "관망 중" # 기본 상태
-    
-    # 매수 신호 발생 시
-    final_buy = False
-    if active_strategies and is_buy_signal:
-        signal_label = "🚀 강력 매수"
-        final_buy = True
-
-    # 공통 데이터 추가 (전략에 하나라도 맞거나, 전체 탭용)
-    # 전체 탭에는 추세가 좋은 종목은 다 보여줌
-    if is_trend or active_strategies:
-        status_data.append({
-            "종목": symbol,
-            "현재가": float(last["close"]),
-            "WPR": round(float(last["wpr"]), 2),
-            "RSI": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
-            "전략": strategy_label,
-            "신호": signal_label,
-            "is_conservative": is_conservative_fit,
-            "is_neutral": is_neutral_fit,
-            "is_aggressive": is_aggressive_fit
-        })
-
-    # 모의 매수 (강력 매수 시)
-    buy_msg = None
-    if final_buy:
-        # 중복 매수 방지
-        # portfolio_file 사용
-        # 현재 루프 안에서 pf 상태를 매번 읽기엔 IO가 많을 수 있으나, 안전을 위해 읽거나(캐싱필요), 
-        # 여기서는 파일 직접 확인. pt.buy_coin 내부에서 로드함.
-        # 잔고 확인을 위해 미리 로드
-        curr_pf = pt.load_portfolio(portfolio_file)
+        is_st_trend = False
         
+    # is_st_signal: WPR -80 상향 돌파
+    is_st_signal = bool(prev["wpr"] < -80 and last["wpr"] > -80)
+    
+    st_score = "🚀 단기 매수" if (is_st_trend and is_st_signal) else "관망"
+
+    # 2. 장기 전략 (Long-term)
+    # 가격이 EMA 99 위 + RSI가 50~70 사이 (안정적 상승 구간)
+    is_lt_trend = bool(last["close"] > last["ema99"])
+    is_lt_rsi = bool(50 < last["rsi14"] < 70) if "rsi14" in last else False
+    
+    lt_score = "� 장기 보유" if (is_lt_trend and is_lt_rsi) else "비중 축소"
+
+    # 데이터프레임 기록용
+    status_data.append({
+        "종목": symbol,
+        "현재가": float(last["close"]),
+        "단기 신호": st_score,
+        "장기 전략": lt_score,
+        "RSI": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
+        "WPR": round(float(last["wpr"]), 2)
+    })
+
+    # 모의 매수 (현재 모드에 맞춰서)
+    buy_msg = None
+    should_buy = False
+    
+    if portfolio_mode.startswith("단타"):
+        if st_score == "🚀 단기 매수":
+            should_buy = True
+    elif portfolio_mode.startswith("장기"):
+        if lt_score == "💎 장기 보유":
+            should_buy = True
+            
+    if should_buy:
+        # 중복 매수 방지
+        curr_pf = pt.load_portfolio(portfolio_file)
         if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
              buy_msg = "보유 중 (스킵)"
         else:
@@ -276,62 +236,50 @@ for i, symbol in enumerate(top_symbols, start=1):
 
 progress.empty()
 
-# 탭으로 분리하여 표시
-tab_all, tab1, tab2, tab3 = st.tabs(["📋 전체 (요약)", "🛡️ 보수적", "⚖️ 중립적", "⚔️ 공격적"])
+# 화면 상단에 라디오 버튼 추가
+portfolio_view = st.radio("포트폴리오 보기", ["전체", "단기 스캘핑", "장기 스윙"], horizontal=True)
 
 df_all = pd.DataFrame(status_data)
 
-def show_strategy_list(strategy_type=None):
-    if df_all.empty:
-        st.info("검색된 종목이 없습니다.")
-        return
+if df_all.empty:
+    st.info("검색된 종목이 없습니다.")
+else:
+    df_view = df_all.copy()
     
-    if strategy_type == "ALL":
-        subset = df_all.copy()
-    elif strategy_type == "Bo":
-        subset = df_all[df_all["is_conservative"] == True].copy()
-    elif strategy_type == "Nu":
-        subset = df_all[df_all["is_neutral"] == True].copy()
-    elif strategy_type == "Ag":
-        subset = df_all[df_all["is_aggressive"] == True].copy()
+    # 필터링
+    if portfolio_view == "단기 스캘핑":
+        # 단기 매수 신호가 있거나 관망인 종목 중 추세 좋은것? 
+        # 사용자는 "단기 신호"가 "🚀 단기 매수" 인 것을 중요하게 볼 것임.
+        # 하지만 너무 적으면 심심하니 전체 리스트에서 필터링
+        df_filtered = df_view[df_view["단기 신호"] == "🚀 단기 매수"]
+        if df_filtered.empty: # 없으면 전체 보여주되 메시지
+             st.warning("현재 '🚀 단기 매수' 신호가 뜬 종목이 없습니다. (전체 목록 표시)")
+             df_filtered = df_view
+    elif portfolio_view == "장기 스윙":
+        df_filtered = df_view[df_view["장기 전략"] == "💎 장기 보유"]
+        if df_filtered.empty:
+             st.warning("현재 '💎 장기 보유' 구간인 종목이 없습니다. (전체 목록 표시)")
+             df_filtered = df_view
     else:
-        return
+        df_filtered = df_view
 
-    if subset.empty:
-        st.warning(f"조건에 맞는 종목이 없습니다.")
-    else:
-        # 보기 좋게 포맷 column cleaning
-        view_cols = ["종목", "현재가", "WPR", "RSI", "전략", "신호"]
-        subset_view = subset[view_cols].copy()
-        subset_view["현재가"] = subset_view["현재가"].map(fmt_price)
+    # 보기 좋게 포맷
+    if not df_filtered.empty:
+        df_filtered["현재가"] = df_filtered["현재가"].map(fmt_price)
         
         # 스타일 적용 함수
         def highlight_signal(val):
-            if "강력 매수" in str(val):
+            if "🚀" in str(val): # 단기 매수
                 return "background-color: #ff4b4b; color: white; font-weight: bold"
-            elif "진입 가능" in str(val): # 관망 중/진입 가능
-                return "color: #2e86de; font-weight: bold"
+            elif "💎" in str(val): # 장기 보유
+                return "background-color: #00cc96; color: white; font-weight: bold"
             return ""
 
-        # 신호 컬럼에 스타일 적용
         st.dataframe(
-            subset_view.style.map(highlight_signal, subset=["신호"]),
+            df_filtered.style.map(highlight_signal, subset=["단기 신호", "장기 전략"]),
             use_container_width=True,
             hide_index=True
         )
-
-with tab_all:
-    st.caption("스캔된 모든 종목의 상태를 보여줍니다.")
-    show_strategy_list("ALL")
-with tab1:
-    st.caption("볼린저 밴드 내부에서 안정적인 상승을 노립니다 (과열 종목 제외).")
-    show_strategy_list("Bo")
-with tab2:
-    st.caption("MACD 모멘텀이 살아있는 확실한 추세를 따릅니다.")
-    show_strategy_list("Nu")
-with tab3:
-    st.caption("변동성(ATR)이 확대되는 구간에서 큰 수익을 노립니다.")
-    show_strategy_list("Ag")
 
 # 포트폴리오 상세
 st.divider()
