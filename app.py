@@ -116,6 +116,11 @@ with st.sidebar:
     vol_mult = st.slider("거래량 조건(이동평균 대비 배수)", 1.0, 5.0, 2.0, 0.1)
     wpr_level = st.slider("WPR 기준선(과매도 탈출)", -95, -50, -85, 1)
     st.caption("데이터는 바이낸스 공개 시세(지연/누락 가능).")
+    
+    st.divider()
+    st.subheader("자동 갱신")
+    auto_refresh = st.checkbox("자동 새로고침 켜기", value=True)
+    refresh_sec = st.slider("갱신 주기(초)", 5, 60, 5)
 
 
 # 종목 리스트 및 신호 확인
@@ -154,11 +159,15 @@ for i, symbol in enumerate(top_symbols, start=1):
     # 모의 매수 (강력 매수 시)
     buy_msg = None
     if signal == "🚀 강력 매수":
-        success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=100.0)
-        if success:
-            buy_msg = f"매수 체결! ({symbol} @ {last['close']})"
+        # 중복 매수 방지: 이미 보유 중이면 패스
+        if symbol in portfolio["holdings"] and portfolio["holdings"][symbol]["amount"] > 0:
+             buy_msg = "보유 중 (추가 매수 스킵)"
         else:
-            buy_msg = f"매수 실패: {msg}"
+            success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=100.0)
+            if success:
+                buy_msg = f"매수 체결! ({symbol} @ {last['close']})"
+            else:
+                buy_msg = f"매수 실패: {msg}"
 
     vol_ratio = None
     try:
@@ -287,4 +296,10 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
+
+# 자동 갱신 로직 (마지막에 위치)
+if auto_refresh:
+    time.sleep(refresh_sec)
+    st.rerun()
 
