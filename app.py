@@ -229,8 +229,12 @@ for i, symbol in enumerate(top_symbols, start=1):
     
     # 응축 여부 (BB Width가 하위 25% 수준이거나 절대값 0.05 미만 등... -> 단순화: 0.1 미만)
     is_squeeze = (last["bb_width"] < 0.1) 
+    
+    # 정배열 여부 (단순 상태)
+    is_st_trend = (last["ema7"] > last["ema25"])
+    
     # 정배열 전환 (EMA 7 > 25)
-    is_gc = (last["ema7"] > last["ema25"]) and (prev["ema7"] <= prev["ema25"]) # 막 크로스
+    is_gc = is_st_trend and (prev["ema7"] <= prev["ema25"]) # 막 크로스
     # 또는 이미 정배열 상태에서 눌림목? User req: "정배열 전환" -> Golden Cross
     
     # 거래량 실린 양봉 (직전 5개 평균 대비 2배) - last vol > vol_ma5 * 2
