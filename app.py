@@ -360,8 +360,9 @@ st.divider()
 st.subheader("📊 상세 차트")
 
 if df_all.empty:
-    st.info("먼저 스캔 결과가 있어야 상세 차트를 볼 수 있어요.")
-    # 데이터가 없을 때 스톱하지 않고 그냥 메시지만 띄움 (화면 전체가 죽는 것 방지)
+    st.info("현재 스캔된 종목이 없어 차트를 표시할 수 없습니다.")
+    # 검색된 종목이 없어도 빈 차트라도 띄우거나, 수동 입력 칸을 줄 수도 있음.
+    # 여기서는 안내 문구만 수정
 else:
     selected_coin = st.selectbox("상세 차트 분석", df_all["종목"].tolist())
     df_chart = get_data(selected_coin, timeframe=timeframe, limit=300)
