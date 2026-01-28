@@ -130,6 +130,10 @@ def sell_coin(symbol: str, price: float, amount: float, filename=PORTFOLIO_FILE)
     # 매도 금액
     sell_value = amount * price
     
+    # 평단가 기준 수익률 계산
+    avg_price = holding["avg_price"]
+    profit_pct = (price - avg_price) / avg_price * 100
+    
     # 잔액 증가
     pf["balance"] += sell_value
     
@@ -147,7 +151,8 @@ def sell_coin(symbol: str, price: float, amount: float, filename=PORTFOLIO_FILE)
         "symbol": symbol,
         "price": price,
         "amount": amount,
-        "total": sell_value
+        "total": sell_value,
+        "pnl_pct": profit_pct # 수익률 저장
     })
     
     save_portfolio(pf, filename)

@@ -455,7 +455,7 @@ with p_col1:
 with p_col2:
     st.markdown("##### 📝 최근 매매 기록")
     curr_pf = pt.load_portfolio(portfolio_file)
-    trades = curr_pf.get("trades", [])
+    trades = curr_pf.get("history", [])
     
     if not trades:
         st.info("매매 기록이 없습니다.")
