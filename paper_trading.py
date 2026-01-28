@@ -94,8 +94,8 @@ def get_portfolio_status(current_prices: dict, filename=PORTFOLIO_FILE):
         details.append({
             "종목": symbol,
             "보유수량": f"{amt:.6f}",
-            "평단가": f"{data['avg_price']:.2f}",
-            "현재가": f"{cur_price:.2f}",
+            "평단가": f"{data['avg_price']:.4f}",
+            "현재가": f"{cur_price:.4f}",
             "평가금액": f"{val:.2f}",
             "수익률": f"{profit_pct:.2f}%",
             "수익금": f"{profit:.2f}"

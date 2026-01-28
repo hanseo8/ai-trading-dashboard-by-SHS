@@ -92,14 +92,11 @@ def get_data(symbol: str, timeframe: str = "1h", limit: int = 200) -> Optional[p
         return None
 
 
-def fmt_price(x: float) -> str:
-    if x is None or (isinstance(x, float) and (math.isnan(x) or math.isinf(x))):
+def fmt_price(x):
+    if x is None:
         return "-"
-    if x >= 1000:
-        return f"{x:,.2f}"
-    if x >= 1:
-        return f"{x:,.4f}"
-    return f"{x:,.8f}"
+    # 요청: 0.0000 자리까지 표시
+    return f"{x:,.4f}"
 
 
 def safe_quote_volume(markets: dict, symbol: str) -> float:
@@ -278,14 +275,18 @@ else:
             return ""
 
         st.dataframe(
-            df_filtered.style.map(highlight_signal, subset=["단기 신호", "장기 전략"]),
+            df_filtered.style
+            .map(highlight_signal, subset=["단기 신호", "장기 전략"])
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', '#FFDAB9'), ('color', 'black'), ('font-weight', 'bold'), ('text-align', 'center')]}
+            ]),
             use_container_width=True,
             hide_index=True
         )
 
 # 포트폴리오 상세
 st.divider()
-st.subheader(f"💼 내 포트폴리오 ({portfolio_mode})")
+st.subheader("💼 내 포트폴리오")
 
 # 현재가 갱신을 위해 스캔된 데이터 활용 (또는 별도 조회 필요)
 # 위 루프에서 현재가가 있다면 업데이트
