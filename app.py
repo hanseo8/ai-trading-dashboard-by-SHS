@@ -13,8 +13,10 @@ import paper_trading as pt
 
 
 # 페이지 설정
-st.set_page_config(page_title="은둔고수 트레이딩 보드", layout="wide")
+st.set_page_config(page_title="서한석의 코인 자동매매", layout="wide")
 
+# 1. 제목 (중앙 정렬)
+st.markdown("<h1 style='text-align: center;'>서한석의 코인 자동매매 실시간 상황판</h1>", unsafe_allow_html=True)
 
 @st.cache_resource
 def get_exchange() -> ccxt.Exchange:
@@ -283,7 +285,21 @@ def show_strategy_list(strategy_type=None):
         view_cols = ["종목", "현재가", "WPR", "RSI", "전략", "신호"]
         subset_view = subset[view_cols].copy()
         subset_view["현재가"] = subset_view["현재가"].map(fmt_price)
-        st.dataframe(subset_view, use_container_width=True, hide_index=True)
+        
+        # 스타일 적용 함수
+        def highlight_signal(val):
+            if "강력 매수" in str(val):
+                return "background-color: #ff4b4b; color: white; font-weight: bold"
+            elif "진입 가능" in str(val): # 관망 중/진입 가능
+                return "color: #2e86de; font-weight: bold"
+            return ""
+
+        # 신호 컬럼에 스타일 적용
+        st.dataframe(
+            subset_view.style.map(highlight_signal, subset=["신호"]),
+            use_container_width=True,
+            hide_index=True
+        )
 
 with tab_all:
     st.caption("스캔된 모든 종목의 상태를 보여줍니다.")
