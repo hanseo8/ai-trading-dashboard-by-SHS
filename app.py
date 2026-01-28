@@ -58,7 +58,24 @@ def get_data(symbol: str, timeframe: str = "1h", limit: int = 200) -> Optional[p
         df["ema99"] = ta.ema(df["close"], length=99)
         df["wpr"] = ta.willr(df["high"], df["low"], df["close"], length=14)
         df["vol_ma"] = ta.sma(df["volume"], length=10)
+        df["vol_ma"] = ta.sma(df["volume"], length=10)
         df["rsi14"] = ta.rsi(df["close"], length=14)
+
+        # 추가 지표 (전략별)
+        # 1. MACD (중립적)
+        macd = ta.macd(df["close"])
+        if macd is not None:
+            df = pd.concat([df, macd], axis=1)
+        
+        # 2. Bollinger Bands (보수적)
+        bb = ta.bbands(df["close"], length=20, std=2)
+        if bb is not None:
+            df = pd.concat([df, bb], axis=1)
+
+        # 3. ATR (공격적)
+        df["atr"] = ta.atr(df["high"], df["low"], df["close"], length=14)
+        if "atr" in df.columns:
+            df["atr_ma"] = ta.sma(df["atr"], length=20) # ATR 이동평균 (변동성 돌파 확인용)
 
         # 결측치가 있는 초기 구간 제거(지표 안정화)
         df = df.dropna().reset_index(drop=True)
@@ -149,55 +166,99 @@ for i, symbol in enumerate(top_symbols, start=1):
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # 조건 체크
+    # 기본 조건 (공통)
     is_trend = bool(last["ema7"] > last["ema25"] and last["close"] > last["ema99"])
     is_wpr = bool(prev["wpr"] < wpr_level and last["wpr"] > wpr_level)
     is_vol = bool(last["volume"] > (last["vol_ma"] * float(vol_mult)))
+    base_signal = is_trend and is_wpr and is_vol
 
-    signal = "🚀 강력 매수" if (is_trend and is_wpr and is_vol) else "관망"
-    
-    # 모의 매수 (강력 매수 시)
-    buy_msg = None
-    if signal == "🚀 강력 매수":
-        # 중복 매수 방지: 이미 보유 중이면 패스
-        if symbol in portfolio["holdings"] and portfolio["holdings"][symbol]["amount"] > 0:
-             buy_msg = "보유 중 (추가 매수 스킵)"
-        else:
-            success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=100.0)
-            if success:
-                buy_msg = f"매수 체결! ({symbol} @ {last['close']})"
-            else:
-                buy_msg = f"매수 실패: {msg}"
+    # 전략별 조건
+    # 1. 보수적 (Safe): 볼린저 밴드 상단 돌파 시 매수 금지 (과열 방지)
+    # BBU_20_2.0 컬럼 확인 필요
+    bbu = last.get("BBU_20_2.0")
+    bbm = last.get("BBM_20_2.0")
+    is_conservative = False
+    if base_signal and bbu is not None:
+        # 밴드 중간보다 위에 있고, 상단을 뚫지는 않았을 때 (안전 구간)
+        if last["close"] > bbm and last["close"] < bbu:
+            is_conservative = True
 
-    vol_ratio = None
-    try:
-        vol_ratio = float(last["volume"]) / float(last["vol_ma"]) if float(last["vol_ma"]) else None
-    except Exception:
-        vol_ratio = None
+    # 2. 중립적 (Neutral): MACD 골든크로스/상승 추세 확인
+    # MACDh_12_26_9 (Histogram) > 0
+    hist = last.get("MACDh_12_26_9")
+    is_neutral = False
+    if base_signal and hist is not None:
+        # 히스토그램이 양수 (상승 모멘텀)
+        if hist > 0:
+            is_neutral = True
 
-    status_data.append(
-        {
+    # 3. 공격적 (Aggressive): 변동성 돌파 (ATR 상승)
+    atr = last.get("atr")
+    atr_ma = last.get("atr_ma")
+    is_aggressive = False
+    if base_signal and atr is not None and atr_ma is not None:
+        # 변동성이 평균보다 높아짐 (큰 움직임 예상)
+        if atr > atr_ma:
+            is_aggressive = True
+
+    # 하나라도 해당되면 표시
+    if is_conservative or is_neutral or is_aggressive:
+        common_data = {
             "종목": symbol,
             "현재가": float(last["close"]),
-            "Williams %R": round(float(last["wpr"]), 2),
-            "RSI(14)": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
-            "거래량 비율": f"{round(vol_ratio, 1)}배" if vol_ratio is not None else "-",
-            "신호": signal,
+            "WPR": round(float(last["wpr"]), 2),
+            "RSI": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
         }
-    )
+        
+        if is_conservative:
+            status_data.append({**common_data, "전략": "🛡️ 보수적", "신호": "안전 진입"})
+        if is_neutral:
+            status_data.append({**common_data, "전략": "⚖️ 중립적", "신호": "추세 확인"})
+        if is_aggressive:
+            status_data.append({**common_data, "전략": "⚔️ 공격적", "신호": "변동성 돌파"})
 
+    # 모의 매수 (어떤 전략이든 강력 신호면 매수)
+    buy_msg = None
+    if is_conservative or is_neutral or is_aggressive:
+        # 중복 매수 방지
+        if symbol in portfolio["holdings"] and portfolio["holdings"][symbol]["amount"] > 0:
+             buy_msg = "보유 중 (스킵)"
+        else:
+            success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=100.0)
+            # 로그는 너무 길어지니 생략하거나 가장 강력한 전략 하나만 표시
+            
     progress.progress(i / len(top_symbols), text=f"스캔 중… ({i}/{len(top_symbols)})")
 
 progress.empty()
 
-df_status = pd.DataFrame(status_data)
-if df_status.empty:
-    st.warning("스캔 결과가 없습니다(데이터 누락/지표 계산 불가). 설정을 바꾸거나 잠시 후 다시 시도해 주세요.")
-else:
-    # 보기 좋게 포맷(표시용)
-    df_view = df_status.copy()
-    df_view["현재가"] = df_view["현재가"].map(fmt_price)
-    st.dataframe(df_view, use_container_width=True, hide_index=True)
+# 탭으로 분리하여 표시
+tab1, tab2, tab3 = st.tabs(["🛡️ 보수적 (안전)", "⚖️ 중립적 (정확)", "⚔️ 공격적 (수익)"])
+
+df_all = pd.DataFrame(status_data)
+
+def show_strategy_list(strategy_name):
+    if df_all.empty:
+        st.info("검색된 종목이 없습니다.")
+        return
+    
+    subset = df_all[df_all["전략"] == strategy_name].copy()
+    if subset.empty:
+        st.warning(f"'{strategy_name}' 조건에 맞는 종목이 없습니다.")
+    else:
+        # 중복 제거 (한 종목이 여러 전략에 걸릴 수 있음 -> 리스트에는 각각 표시됨)
+        # 보기 좋게 포맷
+        subset["현재가"] = subset["현재가"].map(fmt_price)
+        st.dataframe(subset, use_container_width=True, hide_index=True)
+
+with tab1:
+    st.caption("볼린저 밴드 내부에서 안정적인 상승을 노립니다 (과열 종목 제외).")
+    show_strategy_list("🛡️ 보수적")
+with tab2:
+    st.caption("MACD 모멘텀이 살아있는 확실한 추세를 따릅니다.")
+    show_strategy_list("⚖️ 중립적")
+with tab3:
+    st.caption("변동성(ATR)이 확대되는 구간에서 큰 수익을 노립니다.")
+    show_strategy_list("⚔️ 공격적")
 
 # 포트폴리오 상세
 st.divider()
