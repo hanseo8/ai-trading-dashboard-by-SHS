@@ -125,12 +125,28 @@ def safe_quote_volume(markets: dict, symbol: str) -> float:
 
 with st.sidebar:
     st.subheader("설정")
-    timeframe = st.selectbox("타임프레임", ["1m", "5m", "15m", "1h", "4h", "1d"], index=2)
     
-    # 15m 선택 시 안내 메시지
-    if timeframe == "15m":
-        st.info("💡 15분봉은 '고수의 기법(Triple Confirm)' 전용입니다.\n(EMA99 추세 + RSI/WPR 타점 + 거래량 2.5배 폭발)")
-        
+    # 1. 전략 선택 (최상위)
+    strategy_mode = st.selectbox(
+        "전략 선택", 
+        ["단기 스캘핑 (1m/5m)", "중장기 스윙 (1h~1d)", "고수의 기법 (Triple Confirm)"]
+    )
+    
+    # 2. 타임프레임 (전략에 종속)
+    if strategy_mode.startswith("단기"):
+        timeframe = st.selectbox("타임프레임", ["1m", "5m"], index=1)
+        portfolio_file = "portfolio_scalping.json"
+        portfolio_label = "단타 (Scalping)"
+    elif strategy_mode.startswith("중장기"):
+        timeframe = st.selectbox("타임프레임", ["1h", "4h", "1d"], index=0)
+        portfolio_file = "portfolio_long.json"
+        portfolio_label = "장기 (Long-Term)"
+    else: # 고수의 기법
+        timeframe = st.selectbox("타임프레임", ["15m"], index=0)
+        portfolio_file = "portfolio_my.json"
+        portfolio_label = "고수의 기법 (Triple Confirm)"
+        st.info("💡 15분봉 전용: 추세 + WPR/RSI + 거래량 2.5배")
+
     top_n = st.slider("스캔 개수", min_value=5, max_value=50, value=20, step=5)
     vol_mult = st.slider("거래량 조건(이동평균 대비 배수)", 1.0, 5.0, 1.1, 0.1) # 기본값 1.1로 완화
     wpr_level = st.slider("WPR 기준선(과매도 탈출)", -95, -50, -85, 1)
@@ -146,16 +162,8 @@ with st.sidebar:
     if enable_lock:
         st.caption("안전 모드 ON: 초기화 버튼이 잠깁니다. (자동 매매는 계속됨)")
 
-# 포트폴리오 파일 결정 (단타/장기/나만의기법)
-if timeframe in ["1m", "5m"]:
-    portfolio_mode = "단타 (Scalping)"
-    portfolio_file = "portfolio_scalping.json"
-elif timeframe == "15m":
-    portfolio_mode = "고수의 기법 (Triple Confirm)"
-    portfolio_file = "portfolio_my.json"
-else:
-    portfolio_mode = "장기 (Long-Term)"
-    portfolio_file = "portfolio_long.json"
+# 전역 변수 설정
+portfolio_mode = portfolio_label
 
 # 상단 포트폴리오 요약
 pf_init = pt.load_portfolio(portfolio_file)
@@ -272,13 +280,20 @@ for i, symbol in enumerate(top_symbols, start=1):
     elif is_master_trend and is_master_rsi and is_master_vol:
         master_signal = "⚡ 추세 돌파 (추격매수)"
 
+    # 현재 모드에 맞는 신호 선택
+    if strategy_mode.startswith("단기"):
+         display_signal = st_score
+    elif strategy_mode.startswith("중장기"):
+         display_signal = lt_score
+    else: # 고수
+         display_signal = master_signal
+         
     # 3. 데이터프레임에 추가
     status_data.append({
         "종목": symbol,
         "현재가": float(last["close"]),
-        "단기 신호": st_score,
-        "장기 전략": lt_score,
-        "나만의 기법": master_signal,
+        "진입 신호": display_signal,
+        "추세(EMA)": "상승/정배열" if (is_st_trend or is_lt_trend) else "하락/역배열", # 참고용
         "RSI": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
         "거래량": f"{round(last['volume']/last['vol_ma'], 1)}배"
     })
@@ -287,16 +302,13 @@ for i, symbol in enumerate(top_symbols, start=1):
     buy_msg = None
     should_buy = False
     
-    # 모드별 매수 조건
-    if portfolio_mode.startswith("단타"): # 1m, 5m
-        if "단기 급등" in st_score:
-            should_buy = True
-    elif portfolio_mode.startswith("고수"): # 15m (Triple Confirm)
-        if "매수" in master_signal: # 강력매수 or 추격매수
-            should_buy = True
-    elif portfolio_mode.startswith("장기"): # 1h+
-        if lt_score == "💎 장기 보유":
-            should_buy = True
+    # 모드별 매수 조건 (Display Signal 기반으로 판단 가능)
+    if "🚀" in display_signal: # 단기 급등
+        should_buy = True
+    elif "강력매수" in display_signal or "추격매수" in display_signal: # 고수
+        should_buy = True
+    elif "장기 보유" in display_signal: # 장기
+        should_buy = True
             
     # 매수 실행
     if should_buy:
@@ -356,60 +368,40 @@ for i, symbol in enumerate(top_symbols, start=1):
 
 progress.empty()
 
-# 화면 상단에 라디오 버튼 추가
-# 15m 선택 시 '나만의 기법'이 기본 탭처럼 보이게 하거나, 전체 리스트에서 필터링
-portfolio_view = st.radio("포트폴리오 보기", ["전체", "단기 스캘핑", "장기 스윙", "나만의 기법"], horizontal=True)
-
+# 필터링 없이 전체 리스트 출력 (메인 화면 단순화)
 df_all = pd.DataFrame(status_data)
 
 if df_all.empty:
     st.info("검색된 종목이 없습니다.")
 else:
-    df_view = df_all.copy()
-    
-    # 필터링
-    if portfolio_view == "단기 스캘핑":
-        df_filtered = df_view[df_view["단기 신호"].str.contains("🚀")]
-    elif portfolio_view == "장기 스윙":
-        df_filtered = df_view[df_view["장기 전략"] == "💎 장기 보유"]
-    elif portfolio_view == "나만의 기법":
-        df_filtered = df_view[df_view["나만의 기법"].str.contains("매수")]
-    else:
-        df_filtered = df_view
-
-    # 필터 결과가 비었을 때 메시지
-    if df_filtered.empty and portfolio_view != "전체":
-         st.warning(f"현재 '{portfolio_view}' 조건에 맞는 종목이 없습니다. (전체 목록 표시)")
-         df_filtered = df_view
-
     # 보기 좋게 포맷
-    if not df_filtered.empty:
-        df_filtered["현재가"] = df_filtered["현재가"].map(fmt_price)
-        
-        # 스타일 적용 함수
-        def highlight_signal(val):
-            val_str = str(val)
-            if "🚀" in val_str: # 단기 매수
-                return "background-color: #ff4b4b; color: white; font-weight: bold"
-            elif "💎" in val_str: # 장기 보유
-                return "background-color: #00cc96; color: white; font-weight: bold"
-            elif "🎯" in val_str: # (구) 나만의 매수 -> 호환성 유지 위해 남겨두거나 삭제. 여기선 신규 신호로 대체
-                return "background-color: #ffa502; color: white; font-weight: bold"
-            elif "🔥" in val_str: # 고수: 역대급 타점
-                return "background-color: #ff4500; color: white; font-weight: bold" # 오렌지레드
-            elif "⚡" in val_str: # 고수: 추세 돌파
-                return "background-color: #ffa502; color: white; font-weight: bold" # 오렌지
-            return ""
+    df_view = df_all.copy()
+    df_view["현재가"] = df_view["현재가"].map(fmt_price)
+    
+    # 스타일 적용 함수
+    def highlight_signal(val):
+        val_str = str(val)
+        if "🚀" in val_str: 
+            return "background-color: #ff4b4b; color: white; font-weight: bold"
+        elif "💎" in val_str: 
+            return "background-color: #00cc96; color: white; font-weight: bold"
+        elif "🎯" in val_str: 
+            return "background-color: #ffa502; color: white; font-weight: bold"
+        elif "🔥" in val_str: 
+            return "background-color: #ff4500; color: white; font-weight: bold" # 오렌지레드
+        elif "⚡" in val_str:
+            return "background-color: #ffa502; color: white; font-weight: bold" # 오렌지
+        return ""
 
-        st.dataframe(
-            df_filtered.style
-            .map(highlight_signal, subset=["단기 신호", "장기 전략", "나만의 기법"])
-            .set_table_styles([
-                {'selector': 'th', 'props': [('background-color', '#FFDAB9'), ('color', 'black'), ('font-weight', 'bold'), ('text-align', 'center')]}
-            ]),
-            use_container_width=True,
-            hide_index=True
-        )
+    st.dataframe(
+        df_view.style
+        .map(highlight_signal, subset=["진입 신호"])
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', '#FFDAB9'), ('color', 'black'), ('font-weight', 'bold'), ('text-align', 'center')]}
+        ]),
+        use_container_width=True,
+        hide_index=True
+    )
 
 # 포트폴리오 상세
 st.divider()
