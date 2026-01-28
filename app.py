@@ -117,7 +117,7 @@ with st.sidebar:
     
     # 15m 선택 시 안내 메시지
     if timeframe == "15m":
-        st.info("💡 15분봉은 '나만의 기법' 전용입니다.\n(BB 15, 2.4 하단 터치 매수 / 10% 익절)")
+        st.info("💡 15분봉은 '고수의 기법(Triple Confirm)' 전용입니다.\n(EMA99 추세 + RSI/WPR 타점 + 거래량 2.5배 폭발)")
         
     top_n = st.slider("스캔 개수", min_value=5, max_value=50, value=20, step=5)
     vol_mult = st.slider("거래량 조건(이동평균 대비 배수)", 1.0, 5.0, 1.1, 0.1) # 기본값 1.1로 완화
@@ -139,7 +139,7 @@ if timeframe == "5m":
     portfolio_mode = "단타 (Scalping)"
     portfolio_file = "portfolio_scalping.json"
 elif timeframe == "15m":
-    portfolio_mode = "나만의 기법 (My Strategy)"
+    portfolio_mode = "고수의 기법 (Triple Confirm)"
     portfolio_file = "portfolio_my.json"
 else:
     portfolio_mode = "장기 (Long-Term)"
@@ -232,27 +232,39 @@ for i, symbol in enumerate(top_symbols, start=1):
     
     lt_score = "💎 장기 보유" if (is_lt_trend and is_lt_rsi) else "비중 축소"
     
-    # 3. 나만의 기법 (My Strategy - 15m Only)
-    # 조건: BB(15, 2.4) 하단 터치 (Low <= Lower Band)
-    bbl_my = last.get("BBL_15_2.4")
-    is_my_signal = False
+    # --- 고수의 기법: 나만의 기법 (Master Strategy) ---
+
+    # 1. 조건 정의
+    # 장기 추세(Filter): 가격이 EMA 99(장기 이평선) 위에 있어 전체적인 흐름이 상승장일 것.
+    is_master_trend = last["close"] > last["ema99"]
     
-    if bbl_my is not None:
-        if last["low"] <= bbl_my:
-            is_my_signal = True
-            
-    my_score = "🎯 나만의 매수" if is_my_signal else "관망"
+    # 단기 눌림목(Trigger): RSI가 40 이하로 떨어졌다가 다시 대가리를 들거나(여기선 단순화), 
+    # Williams %R이 -85 바닥을 찍고 탈출하는 순간.
+    # 사용자 요청: WPR -85 기준
+    is_master_wpr = prev["wpr"] < -85 and last["wpr"] > -85
+    
+    # 거래량 폭발(Confirm): 최근 10개 캔들 평균 거래량보다 2.5배 이상 터지며 상승
+    is_master_vol = last["volume"] > (last["vol_ma"] * 2.5)
+    
+    # RSI 조건 (힘이 실리기 시작함)
+    is_master_rsi = last["rsi14"] > 50
 
+    # 2. 신호 결정
+    master_signal = "관망"
+    if is_master_trend and is_master_wpr and is_master_vol:
+        master_signal = "🔥 역대급 타점 (강력매수)"
+    elif is_master_trend and is_master_rsi and is_master_vol:
+        master_signal = "⚡ 추세 돌파 (추격매수)"
 
-    # 데이터프레임 기록용
+    # 3. 데이터프레임에 추가
     status_data.append({
         "종목": symbol,
         "현재가": float(last["close"]),
         "단기 신호": st_score,
         "장기 전략": lt_score,
-        "나만의 기법": my_score,
+        "나만의 기법": master_signal,
         "RSI": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
-        "WPR": round(float(last["wpr"]), 2)
+        "거래량": f"{round(last['volume']/last['vol_ma'], 1)}배"
     })
 
     # 모의 매수 & 매도 (현재 모드에 맞춰서)
@@ -263,8 +275,8 @@ for i, symbol in enumerate(top_symbols, start=1):
     if portfolio_mode.startswith("단타"): # 5m
         if st_score == "🚀 단기 매수":
             should_buy = True
-    elif portfolio_mode.startswith("나만의"): # 15m
-        if my_score == "🎯 나만의 매수":
+    elif portfolio_mode.startswith("고수"): # 15m (Triple Confirm)
+        if "매수" in master_signal: # 강력매수 or 추격매수
             should_buy = True
     elif portfolio_mode.startswith("장기"): # 1h+
         if lt_score == "💎 장기 보유":
@@ -322,7 +334,7 @@ else:
     elif portfolio_view == "장기 스윙":
         df_filtered = df_view[df_view["장기 전략"] == "💎 장기 보유"]
     elif portfolio_view == "나만의 기법":
-        df_filtered = df_view[df_view["나만의 기법"] == "🎯 나만의 매수"]
+        df_filtered = df_view[df_view["나만의 기법"].str.contains("매수")]
     else:
         df_filtered = df_view
 
@@ -342,8 +354,12 @@ else:
                 return "background-color: #ff4b4b; color: white; font-weight: bold"
             elif "💎" in val_str: # 장기 보유
                 return "background-color: #00cc96; color: white; font-weight: bold"
-            elif "🎯" in val_str: # 나만의 매수
+            elif "🎯" in val_str: # (구) 나만의 매수 -> 호환성 유지 위해 남겨두거나 삭제. 여기선 신규 신호로 대체
                 return "background-color: #ffa502; color: white; font-weight: bold"
+            elif "🔥" in val_str: # 고수: 역대급 타점
+                return "background-color: #ff4500; color: white; font-weight: bold" # 오렌지레드
+            elif "⚡" in val_str: # 고수: 추세 돌파
+                return "background-color: #ffa502; color: white; font-weight: bold" # 오렌지
             return ""
 
         st.dataframe(
