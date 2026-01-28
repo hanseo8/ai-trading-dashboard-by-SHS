@@ -255,7 +255,7 @@ for i, symbol in enumerate(top_symbols, start=1):
         if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
              buy_msg = "보유 중 (스킵)"
         else:
-            success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=100.0, filename=portfolio_file)
+            success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=1000.0, filename=portfolio_file)
 
     # [익절 로직] 나만의 기법 등 수익률 10% 도달 시 자동 매도
     # 모든 모드에서 동작하게 하거나, 특정 모드만 하거나. 여기서는 '나만의 기법' 요청사항이므로 전체 적용해도 무방
