@@ -440,11 +440,59 @@ for d in status_data:
     current_prices[d["종목"]] = d["현재가"]
 
 portfolio_updated = pt.get_portfolio_status(current_prices, filename=portfolio_file)
-if not portfolio_updated["details"]:
-    st.info("보유 중인 코인이 없습니다.")
-else:
-    df_pf = pd.DataFrame(portfolio_updated["details"])
-    st.dataframe(df_pf, use_container_width=True, hide_index=True)
+
+# 2단 컬럼 레이아웃 (보유종목 6 : 매매기록 4)
+p_col1, p_col2 = st.columns([1.5, 1.0])
+
+with p_col1:
+    st.markdown("##### 📦 보유 중인 코인")
+    if not portfolio_updated["details"]:
+        st.info("보유 중인 코인이 없습니다.")
+    else:
+        df_pf = pd.DataFrame(portfolio_updated["details"])
+        st.dataframe(df_pf, use_container_width=True, hide_index=True)
+
+with p_col2:
+    st.markdown("##### 📝 최근 매매 기록")
+    curr_pf = pt.load_portfolio(portfolio_file)
+    trades = curr_pf.get("trades", [])
+    
+    if not trades:
+        st.info("매매 기록이 없습니다.")
+    else:
+        # 최신순 정렬
+        df_trades = pd.DataFrame(trades)
+        df_trades = df_trades.sort_values(by="timestamp", ascending=False).head(15) # 최근 15개만
+        
+        # 보기 좋게 가공
+        # timestamp -> %m-%d %H:%M
+        # type -> 매수/익절/손절/매도
+        
+        display_trades = []
+        for _, r in df_trades.iterrows():
+            ts_str = datetime.fromisoformat(r["timestamp"]).strftime("%m-%d %H:%M")
+            t_type = r["type"]
+            symbol = r["symbol"]
+            price = fmt_price(r["price"])
+            
+            # 수익률 표시
+            profit_str = ""
+            if "pnl_pct" in r and r["pnl_pct"] is not None:
+                 profit_str = f"({r['pnl_pct']:.2f}%)"
+            
+            # 구분(Color) 아이콘
+            icon = "🔵" if "buy" in t_type else "🔴"
+            if "익절" in t_type: icon = "🟢"
+            
+            display_trades.append({
+                "시간": ts_str,
+                "구분": f"{icon} {t_type}",
+                "종목": symbol,
+                "가격": price,
+                "수익률": profit_str
+            })
+            
+        st.dataframe(pd.DataFrame(display_trades), use_container_width=True, hide_index=True)
 
 with st.sidebar:
     if not enable_lock:
