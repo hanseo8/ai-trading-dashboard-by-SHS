@@ -15,8 +15,12 @@ import paper_trading as pt
 # 페이지 설정
 st.set_page_config(page_title="서한석의 코인 자동매매", layout="wide")
 
-# 1. 제목 (중앙 정렬)
-st.markdown("<h1 style='text-align: center;'>서한석의 코인 자동매매 실시간 상황판</h1>", unsafe_allow_html=True)
+# 1. 제목 (중앙 정렬 + 밑줄 장식)
+st.markdown("""
+<div style='text-align: center;'>
+    <h1 style='display: inline-block; border-bottom: 3px solid #FF4B4B; padding-bottom: 10px;'>서한석의 코인 자동매매 실시간 상황판</h1>
+</div>
+""", unsafe_allow_html=True)
 
 @st.cache_resource
 def get_exchange() -> ccxt.Exchange:
@@ -109,24 +113,6 @@ def safe_quote_volume(markets: dict, symbol: str) -> float:
 
 
 # 상단 헤더
-st.title("📈 AI 자동매매 실시간 상황판")
-
-# 목표 수익 / 달성률 설정 (임시: 실현 손익 0 기준)
-TARGET_PROFIT_USDT = 100.0
-current_profit_usdt = 0.0  # TODO: 실제 실현 손익 연동 가능
-achievement_rate = (current_profit_usdt / TARGET_PROFIT_USDT * 100.0) if TARGET_PROFIT_USDT > 0 else 0.0
-
-# 포트폴리오 로드
-current_prices = {} # 현재가 수집용
-portfolio = pt.get_portfolio_status(current_prices)
-
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("오늘의 목표 수익", f"{TARGET_PROFIT_USDT:.0f} USDT")
-col2.metric("달성률", f"{achievement_rate:.1f}%")
-col3.metric("모의투자 평가금액", f"{portfolio['total_asset']:,.2f} USDT", delta=f"{portfolio['total_pnl']:,.2f} ({portfolio['total_pnl_pct']:.2f}%)")
-col4.metric("잔액(예수금)", f"{portfolio['balance']:,.2f} USDT")
-col5.metric("마지막 갱신", datetime.now().strftime("%H:%M:%S"))
-
 
 with st.sidebar:
     st.subheader("설정")
@@ -141,8 +127,35 @@ with st.sidebar:
     auto_refresh = st.checkbox("자동 새로고침 켜기", value=True)
     refresh_sec = st.slider("갱신 주기(초)", 5, 60, 5)
 
+# 포트폴리오 파일 결정 (단타/장기)
+if timeframe in ["5m", "15m"]:
+    portfolio_mode = "단타 (Scalping)"
+    portfolio_file = "portfolio_scalping.json"
+else:
+    portfolio_mode = "장기 (Long-Term)"
+    portfolio_file = "portfolio_long.json"
 
-# 종목 리스트 및 신호 확인
+# 상단 포트폴리오 요약
+pf_init = pt.load_portfolio(portfolio_file)
+
+st.divider()
+col1, col2, col3, col4, col5 = st.columns(5)
+
+# 평가금액 계산을 위해 간단히 예전 기록이나(없으면) 초기값 사용
+# 정확한 PnL은 아래 스캔 루프가 돌아야 현재가를 아는데, 
+# 헤더는 먼저 뜨므로 일단 예수금/초기자금 위주로 표시하고 '갱신 중' 느낌을 줌
+with col1:
+    st.metric("오늘의 목표 수익", "100 USDT")
+with col2:
+    st.metric("달성률", "0.0%")
+with col3:
+    st.metric(f"모의투자 평가금액", f"{pf_init['balance']:.2f} USDT", "갱신 대기")
+with col4:
+    st.metric("잔액(예수금)", f"{pf_init['balance']:.2f} USDT")
+with col5:
+    st.metric("마지막 갱신", datetime.now().strftime("%H:%M:%S"))
+
+st.caption(f"현재 모드: {portfolio_mode} - 타임프레임에 따라 계좌가 자동 전환됩니다.")
 st.divider()
 st.subheader("🔥 실시간 정밀 스캔 (USDT 마켓)")
 
@@ -248,10 +261,16 @@ for i, symbol in enumerate(top_symbols, start=1):
     buy_msg = None
     if final_buy:
         # 중복 매수 방지
-        if symbol in portfolio["holdings"] and portfolio["holdings"][symbol]["amount"] > 0:
+        # portfolio_file 사용
+        # 현재 루프 안에서 pf 상태를 매번 읽기엔 IO가 많을 수 있으나, 안전을 위해 읽거나(캐싱필요), 
+        # 여기서는 파일 직접 확인. pt.buy_coin 내부에서 로드함.
+        # 잔고 확인을 위해 미리 로드
+        curr_pf = pt.load_portfolio(portfolio_file)
+        
+        if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
              buy_msg = "보유 중 (스킵)"
         else:
-            success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=100.0)
+            success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=100.0, filename=portfolio_file)
             
     progress.progress(i / len(top_symbols), text=f"스캔 중… ({i}/{len(top_symbols)})")
 
@@ -316,14 +335,14 @@ with tab3:
 
 # 포트폴리오 상세
 st.divider()
-st.subheader("💼 내 포트폴리오 (모의투자)")
+st.subheader(f"💼 내 포트폴리오 ({portfolio_mode})")
 
 # 현재가 갱신을 위해 스캔된 데이터 활용 (또는 별도 조회 필요)
 # 위 루프에서 현재가가 있다면 업데이트
 for d in status_data:
     current_prices[d["종목"]] = d["현재가"]
 
-portfolio_updated = pt.get_portfolio_status(current_prices)
+portfolio_updated = pt.get_portfolio_status(current_prices, filename=portfolio_file)
 if not portfolio_updated["details"]:
     st.info("보유 중인 코인이 없습니다.")
 else:
@@ -332,7 +351,7 @@ else:
 
 with st.sidebar:
     if st.button("포트폴리오 초기화"):
-        pt.reset_portfolio()
+        pt.reset_portfolio(filename=portfolio_file)
         st.rerun()
 
 

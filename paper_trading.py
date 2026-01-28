@@ -6,119 +6,116 @@ from datetime import datetime
 PORTFOLIO_FILE = "portfolio.json"
 DEFAULT_BALANCE = 1000.0  # 초기 지급 USDT
 
-def load_portfolio():
+def load_portfolio(filename=PORTFOLIO_FILE):
     """포트폴리오 파일 로드 또는 초기화"""
-    if not os.path.exists(PORTFOLIO_FILE):
+    if not os.path.exists(filename):
         return {
             "balance": DEFAULT_BALANCE,
-            "holdings": {},  # { "BTC/USDT": { "amount": 0.1, "avg_price": 50000, "trades": [] } }
-            "history": []    # [ { "time": "...", "symbol": "...", "type": "buy", "price": 100, "amount": 1, "total": 100 } ]
+            "holdings": {},  # { "BTC/USDT": { "amount": 0.1, "avg_price": 50000 } }
+            "history": []    # [ { "time": "...", "type": "buy", ... } ]
         }
     try:
-        with open(PORTFOLIO_FILE, "r", encoding="utf-8") as f:
+        with open(filename, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except:
         return {
             "balance": DEFAULT_BALANCE,
             "holdings": {},
             "history": []
         }
 
-def save_portfolio(portfolio):
+def save_portfolio(portfolio, filename=PORTFOLIO_FILE):
     """포트폴리오 파일 저장"""
-    with open(PORTFOLIO_FILE, "w", encoding="utf-8") as f:
+    with open(filename, "w", encoding="utf-8") as f:
         json.dump(portfolio, f, indent=4, ensure_ascii=False)
 
-def buy_coin(symbol: str, price: float, invest_amount: float = 100.0):
+def buy_coin(symbol: str, price: float, invest_amount: float = 100.0, filename=PORTFOLIO_FILE):
     """코인 매수 (모의)"""
-    portfolio = load_portfolio()
-    balance = portfolio.get("balance", 0.0)
-
-    # 잔액 부족 체크
-    if balance < invest_amount:
-        return False, "잔액 부족"
-
-    # 수량 계산
-    amount = invest_amount / price
-
-    # 잔액 차감
-    portfolio["balance"] = balance - invest_amount
-
-    # 보유량 업데이트
-    holdings = portfolio.get("holdings", {})
-    if symbol not in holdings:
-        holdings[symbol] = {"amount": 0.0, "avg_price": 0.0, "total_cost": 0.0}
+    pf = load_portfolio(filename)
     
-    current_holding = holdings[symbol]
-    new_total_amount = current_holding["amount"] + amount
-    new_total_cost = current_holding.get("total_cost", 0.0) + invest_amount
-    new_avg_price = new_total_cost / new_total_amount
-
-    holdings[symbol] = {
-        "amount": new_total_amount,
-        "avg_price": new_avg_price,
-        "total_cost": new_total_cost
-    }
-    portfolio["holdings"] = holdings
-
-    # 기록 추가
-    portfolio["history"].append({
+    # 잔액 확인
+    if pf["balance"] < invest_amount:
+        return False, "잔액 부족"
+    
+    # 수수료 고려 (0.1% 가정) - 일단 단순화해서 수수료 없이 계산하거나 차감
+    amount_bought = invest_amount / price
+    
+    pf["balance"] -= invest_amount
+    
+    # 보유량 업데이트
+    if symbol not in pf["holdings"]:
+        pf["holdings"][symbol] = {"amount": 0.0, "avg_price": 0.0, "total_cost": 0.0}
+    
+    holding = pf["holdings"][symbol]
+    # 평단가 갱신 (총 비용 누적 후 나누기)
+    # 기존 총 비용
+    prev_cost = holding.get("total_cost", holding["amount"] * holding["avg_price"])
+    new_cost = prev_cost + invest_amount
+    new_amount = holding["amount"] + amount_bought
+    new_avg = new_cost / new_amount
+    
+    holding["amount"] = new_amount
+    holding["avg_price"] = new_avg
+    holding["total_cost"] = new_cost
+    
+    # 기록
+    pf["history"].append({
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "symbol": symbol,
         "type": "buy",
+        "symbol": symbol,
         "price": price,
-        "amount": amount,
-        "total": invest_amount
+        "invest": invest_amount,
+        "amount": amount_bought
     })
-
-    save_portfolio(portfolio)
+    
+    save_portfolio(pf, filename)
     return True, "매수 성공"
 
-def get_portfolio_status(current_prices: dict):
+def get_portfolio_status(current_prices: dict, filename=PORTFOLIO_FILE):
     """현재 포트폴리오 상태 계산 (평가금액, 수익률 등)"""
-    portfolio = load_portfolio()
-    balance = portfolio["balance"]
-    holdings = portfolio["holdings"]
+    pf = load_portfolio(filename)
     
-    total_asset = balance
+    total_balance = pf["balance"]
+    holdings_val = 0.0
+    
     details = []
-
-    for symbol, data in holdings.items():
-        if data["amount"] <= 0:
+    
+    for symbol, data in pf["holdings"].items():
+        amt = data["amount"]
+        if amt <= 0:
             continue
             
-        cur_price = current_prices.get(symbol, data["avg_price"]) # 현재가 없으면 평단가로 계산(변동없음)
-        val = data["amount"] * cur_price
-        cost = data["total_cost"]
-        pnl = val - cost
-        pnl_pct = (pnl / cost * 100) if cost > 0 else 0.0
-
-        total_asset += val
+        cur_price = current_prices.get(symbol, data["avg_price"])
+        val = amt * cur_price
+        profit = val - data["total_cost"]
+        profit_pct = (profit / data["total_cost"]) * 100 if data["total_cost"] > 0 else 0
+        
+        holdings_val += val
         details.append({
             "종목": symbol,
-            "보유수량": data["amount"],
-            "평단가": data["avg_price"],
-            "현재가": cur_price,
-            "평가금액": val,
-            "수익금": pnl,
-            "수익률": pnl_pct
+            "보유수량": f"{amt:.6f}",
+            "평단가": f"{data['avg_price']:.2f}",
+            "현재가": f"{cur_price:.2f}",
+            "평가금액": f"{val:.2f}",
+            "수익률": f"{profit_pct:.2f}%",
+            "수익금": f"{profit:.2f}"
         })
+        
+    total_equity = total_balance + holdings_val
+    initial = DEFAULT_BALANCE # 가정
+    total_pnl = total_equity - initial
+    total_pnl_pct = (total_pnl / initial) * 100
     
-    start_balance = DEFAULT_BALANCE # TODO: 필요시 초기자금 설정 기능 추가
-    total_pnl = total_asset - start_balance
-    total_pnl_pct = (total_pnl / start_balance * 100) if start_balance > 0 else 0.0
-
     return {
-        "balance": balance,
-        "total_asset": total_asset,
-        "total_pnl": total_pnl,
-        "total_pnl_pct": total_pnl_pct,
-        "details": details,
-        "history": portfolio["history"]
+        "balance": total_balance,
+        "equity": total_equity,
+        "pnl": total_pnl,
+        "pnl_pct": total_pnl_pct,
+        "details": details
     }
 
-def reset_portfolio():
+def reset_portfolio(filename=PORTFOLIO_FILE):
     """포트폴리오 초기화"""
-    if os.path.exists(PORTFOLIO_FILE):
-        os.remove(PORTFOLIO_FILE)
-    load_portfolio()
+    if os.path.exists(filename):
+        os.remove(filename)
+    load_portfolio(filename)
