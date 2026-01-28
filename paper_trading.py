@@ -16,7 +16,11 @@ def load_portfolio(filename=PORTFOLIO_FILE):
         }
     try:
         with open(filename, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            # 호환성 보장: history 키가 없으면 추가
+            if "history" not in data:
+                data["history"] = data.get("trades", []) # 기존 trades가 있다면 가져옴
+            return data
     except:
         return {
             "balance": DEFAULT_BALANCE,
