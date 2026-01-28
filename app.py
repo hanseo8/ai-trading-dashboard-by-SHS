@@ -208,6 +208,8 @@ for i, symbol in enumerate(top_symbols, start=1):
     is_lt_trend = bool(last["close"] > last["ema99"])
     is_lt_rsi = bool(50 < last["rsi14"] < 70) if "rsi14" in last else False
     
+    lt_score = "💎 장기 보유" if (is_lt_trend and is_lt_rsi) else "비중 축소"
+    
     # 3. 나만의 기법 (My Strategy - 15m Only)
     # 조건: BB(15, 2.4) 하단 터치 (Low <= Lower Band)
     bbl_my = last.get("BBL_15_2.4")
