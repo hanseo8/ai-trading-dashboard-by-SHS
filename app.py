@@ -130,9 +130,9 @@ with st.sidebar:
     refresh_sec = st.slider("갱신 주기(초)", 5, 60, 5)
     
     st.divider()
-    enable_lock = st.checkbox("🔒 포트폴리오 잠금 (매매/초기화 중단)", value=False)
+    enable_lock = st.checkbox("🔒 포트폴리오 잠금 (초기화 방지)", value=False)
     if enable_lock:
-        st.caption("안전 모드 ON: 자동 매매와 초기화가 차단됩니다.")
+        st.caption("안전 모드 ON: 초기화 버튼이 잠깁니다. (자동 매매는 계속됨)")
 
 # 포트폴리오 파일 결정 (단타/장기/나만의기법)
 if timeframe == "5m":
@@ -254,7 +254,7 @@ for i, symbol in enumerate(top_symbols, start=1):
             should_buy = True
             
     # 매수 실행
-    if should_buy and not enable_lock:
+    if should_buy:
         # 중복 매수 방지
         curr_pf = pt.load_portfolio(portfolio_file)
         if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
@@ -279,7 +279,7 @@ for i, symbol in enumerate(top_symbols, start=1):
             # 10% 이상 수익 시 매도
             # (나만의 기법 요청 사항이지만, 다른 전략에도 적용하면 좋음. 일단 요청대로 15m일때만 하거나 전체 적용)
             # 여기선 전체 적용 (손해볼 것 없음)
-            if profit_pct >= 10.0 and not enable_lock:
+            if profit_pct >= 10.0:
                 success, msg = pt.sell_coin(symbol, cur_p, amt, filename=portfolio_file)
                 if success:
                     print(f"💰 익절 성공: {symbol} (+{profit_pct:.2f}%)") # 로그용 (안보임)
