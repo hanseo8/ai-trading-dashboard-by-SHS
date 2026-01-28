@@ -461,7 +461,13 @@ with p_col2:
     else:
         # 최신순 정렬
         df_trades = pd.DataFrame(trades)
-        df_trades = df_trades.sort_values(by="timestamp", ascending=False).head(15) # 최근 15개만
+        # 키 이름 호환성 체크 ('time' vs 'timestamp')
+        if "time" in df_trades.columns:
+            sort_key = "time"
+        else:
+            sort_key = "timestamp" # 혹시 모를 대비
+            
+        df_trades = df_trades.sort_values(by=sort_key, ascending=False).head(15) # 최근 15개만
         
         # 보기 좋게 가공
         # timestamp -> %m-%d %H:%M
@@ -469,7 +475,12 @@ with p_col2:
         
         display_trades = []
         for _, r in df_trades.iterrows():
-            ts_str = datetime.fromisoformat(r["timestamp"]).strftime("%m-%d %H:%M")
+            ts_val = r.get("time", r.get("timestamp", ""))
+            try:
+                # 저장된 형식이 "%Y-%m-%d %H:%M:%S"
+                ts_str = datetime.strptime(ts_val, "%Y-%m-%d %H:%M:%S").strftime("%m-%d %H:%M")
+            except:
+                ts_str = str(ts_val) # 파싱 실패시 그대로
             t_type = r["type"]
             symbol = r["symbol"]
             price = fmt_price(r["price"])
