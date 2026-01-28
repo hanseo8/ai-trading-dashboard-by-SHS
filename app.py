@@ -209,7 +209,7 @@ with col5:
 
 st.caption(f"현재 모드: {portfolio_mode} - 타임프레임에 따라 계좌가 자동 전환됩니다.")
 st.divider()
-st.subheader("🔥 실시간 정밀 스캔 (USDT 마켓)")
+st.subheader(f"🔥 실시간 정밀 스캔 (USDT 마켓 / 거래량 상위 {top_n}개 기준)")
 
 # 기존 try-except 문을 아래처럼 수정해서 에러 내용을 확인합니다.
 try:
