@@ -181,10 +181,14 @@ portfolio_mode = portfolio_label
 # 상단 포트폴리오 요약
 pf_init = pt.load_portfolio(portfolio_file)
 
-# 평가금액(Equity) 근사치 계산 (현재가 반영 전, 매수 원금 기준)
+# 평가금액(Equity) 계산 (실시간 가격 반영 시도)
+cached_prices = st.session_state.get("current_prices", {})
 initial_equity = pf_init["balance"]
-for h in pf_init["holdings"].values():
-    initial_equity += h["total_cost"]
+
+for symbol, h in pf_init["holdings"].items():
+    # 현재가가 있으면 현재가, 없으면 평단가(매수비용)로 계산
+    c_price = cached_prices.get(symbol, h["avg_price"])
+    initial_equity += h["amount"] * c_price
 
 # 수익률 계산 (기준 5만불)
 # 나중에 update_portfolio_status가 돌면 더 정확하겠지만, 헤더 단계에선 근사치 제공
@@ -196,12 +200,12 @@ st.divider()
 col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
-    st.metric("오늘의 수익(USDT)", f"{pnl_amount:,.2f} USDT", f"{pnl_pct:.2f}%")
+    st.metric("실시간 수익(USDT)", f"{pnl_amount:,.2f} USDT", f"{pnl_pct:.2f}%")
 with col2:
     # 달성률 대신 다른 정보를 보여주거나 빈 칸
     st.metric("보유 종목 수", f"{len(pf_init['holdings'])} 개")
 with col3:
-    st.metric(f"모의투자 평가금액", f"{initial_equity:,.2f} USDT", "갱신 대기")
+    st.metric(f"모의투자 평가금액", f"{initial_equity:,.2f} USDT", "(실시간 변동)")
 with col4:
     st.metric("잔액(예수금)", f"{pf_init['balance']:,.2f} USDT")
 with col5:
