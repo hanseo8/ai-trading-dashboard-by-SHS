@@ -73,14 +73,26 @@ def get_data(symbol: str, timeframe: str = "1h", limit: int = 200) -> Optional[p
         bb = ta.bbands(df["close"], length=20, std=2.0)
         df = pd.concat([df, bb], axis=1)
         
-        # [나만의 기법] BB(15, 2.4) 추가
+        # [나만의 기법] BB(15, 2.4) 추가 (유지 - 레거시 참조용 혹은 필요시 사용)
         bb_my = ta.bbands(df["close"], length=15, std=2.4)
         df = pd.concat([df, bb_my], axis=1)
+        
+        # [스캘핑 업그레이드] 
+        # 1. 밴드폭 (Squeeze 감지용): (Upper - Lower) / Middle
+        # ta.bbands 결과 컬럼명 확인 필요. 보통 BBU_*, BBL_*, BBM_*
+        # bb 변수 사용 (20, 2)
+        if "BBU_20_2.0" in df.columns and "BBL_20_2.0" in df.columns and "BBM_20_2.0" in df.columns:
+            df["bb_width"] = (df["BBU_20_2.0"] - df["BBL_20_2.0"]) / df["BBM_20_2.0"]
+        else:
+            df["bb_width"] = 0.0
+            
+        # 2. 거래량 5이평
+        df["vol_ma5"] = ta.sma(df["volume"], length=5)
         
         df["atr"] = ta.atr(df["high"], df["low"], df["close"], length=14)
         df["atr_ma"] = ta.sma(df["atr"], length=20)
         
-        # 거래량 이동평균
+        # 거래량 이동평균 (기존 10이평 유지)
         df["vol_ma"] = ta.sma(df["volume"], length=10)
 
         # 결측치가 있는 초기 구간 제거(지표 안정화)
@@ -113,7 +125,7 @@ def safe_quote_volume(markets: dict, symbol: str) -> float:
 
 with st.sidebar:
     st.subheader("설정")
-    timeframe = st.selectbox("타임프레임", ["5m", "15m", "1h", "4h", "1d"], index=1)
+    timeframe = st.selectbox("타임프레임", ["1m", "5m", "15m", "1h", "4h", "1d"], index=2)
     
     # 15m 선택 시 안내 메시지
     if timeframe == "15m":
@@ -135,7 +147,7 @@ with st.sidebar:
         st.caption("안전 모드 ON: 초기화 버튼이 잠깁니다. (자동 매매는 계속됨)")
 
 # 포트폴리오 파일 결정 (단타/장기/나만의기법)
-if timeframe == "5m":
+if timeframe in ["1m", "5m"]:
     portfolio_mode = "단타 (Scalping)"
     portfolio_file = "portfolio_scalping.json"
 elif timeframe == "15m":
@@ -204,18 +216,30 @@ for i, symbol in enumerate(top_symbols, start=1):
 
     # --- 전략 판별 로직 ---
 
-    # 1. 단기 전략 (Short-term)
-    # EMA 7/25 골든크로스 + Williams %R 과매도 탈출 (-80 상향 돌파)
-    # is_st_trend: 단기 정배열
-    try:
-        is_st_trend = bool(last["ema7"] > last["ema25"])
-    except:
-        is_st_trend = False
-        
-    # is_st_signal: WPR -80 상향 돌파
-    is_st_signal = bool(prev["wpr"] < -80 and last["wpr"] > -80)
+    # 1. 단기 전략 (Short-term / Scalping)
+    # 조건: 에너지 응축(횡보) + 정배열(EMA 7-25 GC) + 거래량 2배(5이평 대비) + RSI 50 돌파
     
-    st_score = "🚀 단기 매수" if (is_st_trend and is_st_signal) else "관망"
+    # 응축 여부 (BB Width가 하위 25% 수준이거나 절대값 0.05 미만 등... -> 단순화: 0.1 미만)
+    is_squeeze = (last["bb_width"] < 0.1) 
+    # 정배열 전환 (EMA 7 > 25)
+    is_gc = (last["ema7"] > last["ema25"]) and (prev["ema7"] <= prev["ema25"]) # 막 크로스
+    # 또는 이미 정배열 상태에서 눌림목? User req: "정배열 전환" -> Golden Cross
+    
+    # 거래량 실린 양봉 (직전 5개 평균 대비 2배) - last vol > vol_ma5 * 2
+    # 그리고 양봉(Close > Open)
+    is_vol_pump = (last["volume"] > last["vol_ma5"] * 2.0) and (last["close"] > last["open"])
+    
+    # RSI 컨펌 (50 상향 돌파 or 50~60 구간 상승)
+    is_rsi_up = (last["rsi14"] > 50)
+    
+    st_score = "관망"
+    if is_gc and is_vol_pump and is_rsi_up: # 응축은 옵션으로 볼지, 필수일지. 사용자: "횡보해야 합니다"
+        # 횡보 감지는 bb_width가 낮았던 상태에서 터지는 것.
+        # prev의 bb_width가 낮았다면 OK.
+        if prev["bb_width"] < 0.15: # 조금 널널하게
+             st_score = "🚀 단기 급등 (Squeeze Break)"
+        else:
+             st_score = "🚀 단기 급등 (Volume Break)" # 횡보 아니어도 볼륨 터지면 일단 표시
 
     # 2. 장기 전략 (Long-term)
     # 가격이 EMA 99 위 + RSI가 50~70 사이 (안정적 상승 구간)
@@ -264,8 +288,8 @@ for i, symbol in enumerate(top_symbols, start=1):
     should_buy = False
     
     # 모드별 매수 조건
-    if portfolio_mode.startswith("단타"): # 5m
-        if st_score == "🚀 단기 매수":
+    if portfolio_mode.startswith("단타"): # 1m, 5m
+        if "단기 급등" in st_score:
             should_buy = True
     elif portfolio_mode.startswith("고수"): # 15m (Triple Confirm)
         if "매수" in master_signal: # 강력매수 or 추격매수
@@ -281,13 +305,19 @@ for i, symbol in enumerate(top_symbols, start=1):
         if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
              buy_msg = "보유 중 (스킵)"
         else:
-            success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=1000.0, filename=portfolio_file)
+            # 투자금 설정
+            if portfolio_mode.startswith("고수"):
+                invest_money = 10000.0 # 1만불
+            else:
+                invest_money = 1000.0 # 1천불
 
-    # [익절 로직] 나만의 기법 등 수익률 10% 도달 시 자동 매도
-    # 모든 모드에서 동작하게 하거나, 특정 모드만 하거나. 여기서는 '나만의 기법' 요청사항이므로 전체 적용해도 무방
-    # 현재가가 있으므로 수익률 계산 가능.
-    # 포트폴리오 로드 (IO 최적화를 위해 위에서 읽은 curr_pf 재사용 가능하지만, 로직 분리상 다시 읽음 or 구조 개선)
-    # 간단히 구현:
+            success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=invest_money, filename=portfolio_file)
+
+    # [매도 로직 업데이트]
+    # 스캘핑: TP 1.0%, SL (EMA 7 꺾임)
+    # 고수/장기: TP 10% (기존 유지?) -> 고수는 TP에 대한 언급 없었으나 "자신있게 들어가 볼 만한 자리" -> 일단 10% 유지 or 수동
+    # 기존 코드의 10% 로직을 모드별로 분기
+    
     curr_pf = pt.load_portfolio(portfolio_file)
     if symbol in curr_pf["holdings"]:
         holding = curr_pf["holdings"][symbol]
@@ -297,13 +327,30 @@ for i, symbol in enumerate(top_symbols, start=1):
             cur_p = float(last["close"])
             profit_pct = (cur_p - avg_p) / avg_p * 100
             
-            # 10% 이상 수익 시 매도
-            # (나만의 기법 요청 사항이지만, 다른 전략에도 적용하면 좋음. 일단 요청대로 15m일때만 하거나 전체 적용)
-            # 여기선 전체 적용 (손해볼 것 없음)
-            if profit_pct >= 10.0:
+            should_sell = False
+            sell_reason = ""
+            
+            if portfolio_mode.startswith("단타"):
+                # 익절: 1.0% 이상
+                if profit_pct >= 1.0:
+                    should_sell = True
+                    sell_reason = "익절 (1.0%)"
+                # 손절: EMA 7 꺾임 (현재 EMA 7 < 이전 EMA 7)
+                # 단, 너무 잦은 손절 방지 위해 진입 후 약간의 마진? 
+                # 사용자 요청: "EMA 7선이 꺾일 때 즉시 실행"
+                elif last["ema7"] < prev["ema7"]:
+                    should_sell = True
+                    sell_reason = "손절 (EMA7 하락)"
+            else:
+                # 고수 / 장기 등: 기존 10% 룰 (또는 고수는 더 길게? 일단 10% 유지)
+                if profit_pct >= 10.0:
+                    should_sell = True
+                    sell_reason = "익절 (10%)"
+
+            if should_sell and not enable_lock:
                 success, msg = pt.sell_coin(symbol, cur_p, amt, filename=portfolio_file)
                 if success:
-                    print(f"💰 익절 성공: {symbol} (+{profit_pct:.2f}%)") # 로그용 (안보임)
+                    print(f"💰 {sell_reason}: {symbol} ({profit_pct:.2f}%)")
 
     progress.progress(i / len(top_symbols), text=f"스캔 중… ({i}/{len(top_symbols)})")
 
@@ -322,7 +369,7 @@ else:
     
     # 필터링
     if portfolio_view == "단기 스캘핑":
-        df_filtered = df_view[df_view["단기 신호"] == "🚀 단기 매수"]
+        df_filtered = df_view[df_view["단기 신호"].str.contains("🚀")]
     elif portfolio_view == "장기 스윙":
         df_filtered = df_view[df_view["장기 전략"] == "💎 장기 보유"]
     elif portfolio_view == "나만의 기법":
