@@ -334,7 +334,6 @@ for i, symbol in enumerate(top_symbols, start=1):
         if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
              buy_msg = "보유 중 (스킵)"
         else:
-        else:
             # 투자금 설정 (모든 기법 1000불 통일)
             invest_money = 1000.0
 
