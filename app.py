@@ -148,33 +148,25 @@ else:
 # 상단 포트폴리오 요약
 pf_init = pt.load_portfolio(portfolio_file)
 
-st.divider()
-col1, col2, col3, col4, col5 = st.columns(5)
-
-# 평가금액 계산을 위해 간단히 예전 기록이나(없으면) 초기값 사용
-# 정확한 PnL은 아래 스캔 루프가 돌아야 현재가를 아는데, 
-# 헤더는 먼저 뜨므로 일단 예수금/초기자금 위주로 표시하고 '갱신 중' 느낌을 줌
-with col1:
-    st.metric("오늘의 목표 수익", "100 USDT")
-# 상단 포트폴리오 요약
-pf_init = pt.load_portfolio(portfolio_file)
-
 # 평가금액(Equity) 근사치 계산 (현재가 반영 전, 매수 원금 기준)
-# 스캔 후에는 최신 가격 반영된 equity가 나오지만, 헤더는 스캔 전이므로 원금 합계로 표시
 initial_equity = pf_init["balance"]
 for h in pf_init["holdings"].values():
     initial_equity += h["total_cost"]
 
+# 수익률 계산 (기준 10만불)
+# 나중에 update_portfolio_status가 돌면 더 정확하겠지만, 헤더 단계에선 근사치 제공
+base_capital = 100000.0
+pnl_amount = initial_equity - base_capital
+pnl_pct = (pnl_amount / base_capital) * 100
+
 st.divider()
 col1, col2, col3, col4, col5 = st.columns(5)
 
-# 평가금액 계산을 위해 간단히 예전 기록이나(없으면) 초기값 사용
-# 정확한 PnL은 아래 스캔 루프가 돌아야 현재가를 아는데, 
-# 헤더는 먼저 뜨므로 일단 예수금/초기자금 위주로 표시하고 '갱신 중' 느낌을 줌
 with col1:
-    st.metric("오늘의 목표 수익", "100 USDT")
+    st.metric("오늘의 수익(USDT)", f"{pnl_amount:,.2f} USDT", f"{pnl_pct:.2f}%")
 with col2:
-    st.metric("달성률", "0.0%")
+    # 달성률 대신 다른 정보를 보여주거나 빈 칸
+    st.metric("보유 종목 수", f"{len(pf_init['holdings'])} 개")
 with col3:
     st.metric(f"모의투자 평가금액", f"{initial_equity:,.2f} USDT", "갱신 대기")
 with col4:
