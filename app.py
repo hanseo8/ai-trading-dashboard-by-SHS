@@ -142,12 +142,14 @@ with st.sidebar:
         portfolio_file = "portfolio_scalping.json"
         portfolio_label = "단타 (Scalping)"
         default_vol = 2.0 # 스캘핑 기본 2배
+        st.info("⚡ 스캘핑 전략 (1m/5m)\n• 조건: 횡보(Squeeze) + 정배열(EMA) + 거래량 2배\n• 익절: +1.0% / 손절: EMA7 이탈")
         
     elif strategy_mode.startswith("중장기"): # 스윙
         timeframe = st.selectbox("타임프레임", ["1h", "4h", "1d"], index=0)
         portfolio_file = "portfolio_long.json"
         portfolio_label = "장기 (Long-Term)"
         default_vol = 1.1 # 스윙은 널널하게
+        st.info("💎 스윙 전략 (1h~1d)\n• 조건: 장기 추세(EMA99) + RSI 안정권(50~70)\n• 목표: 추세가 꺾일 때까지 장기 보유")
         
     else: # 고수의 기법
         timeframe = st.selectbox("타임프레임", ["15m"], index=0)
