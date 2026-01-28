@@ -17,18 +17,19 @@ st.set_page_config(page_title="은둔고수 트레이딩 보드", layout="wide")
 
 @st.cache_resource
 def get_exchange() -> ccxt.Exchange:
-    # 바이낸스 공식 대체 엔드포인트 + 레이트 리밋 활성화
-    ex = ccxt.binance(
-        {
-            "enableRateLimit": True,
-            "urls": {
-                "api": {
-                    "public": "https://api3.binance.com/api/v3",
-                }
-            },
-        }
-    )
-    # 공개 데이터만 사용 (키 불필요)
+    ex = ccxt.binance({
+        "enableRateLimit": True,
+        "options": {
+            "defaultType": "spot", # 현물 시장 명시
+            "adjustForTimeDifference": True, # 시간 동기화 에러 방지
+        },
+        "urls": {
+            "api": {
+                "public": "https://api1.binance.com/api/v3", # api3가 안 되면 api1으로 시도
+            }
+        },
+        "timeout": 30000, # 응답 대기 시간 연장
+    })
     return ex
 
 
@@ -112,10 +113,12 @@ with st.sidebar:
 st.divider()
 st.subheader("🔥 실시간 정밀 스캔 (USDT 마켓)")
 
+# 기존 try-except 문을 아래처럼 수정해서 에러 내용을 확인합니다.
 try:
     markets = fetch_tickers()
 except Exception as e:
-    st.error("바이낸스 티커를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.")
+    st.error(f"바이낸스 연결 실패: {str(e)}") # 어떤 에러인지 정확히 보여줍니다.
+    st.info("💡 팁: VPN을 사용 중이라면 끄거나, 반대로 인터넷 환경이 불안정하면 다른 와이파이/핫스팟으로 시도해 보세요.")
     st.stop()
 
 symbols = [s for s in markets.keys() if isinstance(s, str) and s.endswith("/USDT")]
