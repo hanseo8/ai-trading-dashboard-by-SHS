@@ -186,9 +186,9 @@ initial_equity = pf_init["balance"]
 for h in pf_init["holdings"].values():
     initial_equity += h["total_cost"]
 
-# 수익률 계산 (기준 10만불)
+# 수익률 계산 (기준 5만불)
 # 나중에 update_portfolio_status가 돌면 더 정확하겠지만, 헤더 단계에선 근사치 제공
-base_capital = 100000.0
+base_capital = 50000.0
 pnl_amount = initial_equity - base_capital
 pnl_pct = (pnl_amount / base_capital) * 100
 
@@ -334,11 +334,9 @@ for i, symbol in enumerate(top_symbols, start=1):
         if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
              buy_msg = "보유 중 (스킵)"
         else:
-            # 투자금 설정
-            if portfolio_mode.startswith("고수"):
-                invest_money = 10000.0 # 1만불
-            else:
-                invest_money = 1000.0 # 1천불
+        else:
+            # 투자금 설정 (모든 기법 1000불 통일)
+            invest_money = 1000.0
 
             success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=invest_money, filename=portfolio_file)
 

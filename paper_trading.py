@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime
 
 PORTFOLIO_FILE = "portfolio.json"
-DEFAULT_BALANCE = 1000.0  # 초기 지급 USDT
+DEFAULT_BALANCE = 50000.0  # 초기 지급 USDT
 
 def load_portfolio(filename=PORTFOLIO_FILE):
     """포트폴리오 파일 로드 또는 초기화"""
