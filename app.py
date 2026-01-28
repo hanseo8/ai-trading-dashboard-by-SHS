@@ -28,6 +28,8 @@ def get_exchange() -> ccxt.Exchange:
                 "public": "https://data-api.binance.vision/api/v3",
                 "fapiPublic": "https://data-api.binance.vision/api/v3", # 퓨처스 접속 차단 (우회)
                 "fapi": "https://data-api.binance.vision/api/v3",       # 퓨처스 접속 차단 (우회)
+                "dapiPublic": "https://data-api.binance.vision/api/v3", # 코인 퓨처스 차단 (우회)
+                "dapi": "https://data-api.binance.vision/api/v3",       # 코인 퓨처스 차단 (우회)
             }
         },
         "timeout": 30000, # 응답 대기 시간 연장
