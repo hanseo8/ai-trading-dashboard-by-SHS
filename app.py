@@ -166,69 +166,90 @@ for i, symbol in enumerate(top_symbols, start=1):
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # 기본 조건 (공통)
-    is_trend = bool(last["ema7"] > last["ema25"] and last["close"] > last["ema99"])
-    is_wpr = bool(prev["wpr"] < wpr_level and last["wpr"] > wpr_level)
-    is_vol = bool(last["volume"] > (last["vol_ma"] * float(vol_mult)))
-    base_signal = is_trend and is_wpr and is_vol
+    # 1. 기본 추세 확인 (State)
+    # EMA 정배열 (7 > 25 > 99)
+    try:
+        is_trend = bool(last["ema7"] > last["ema25"] and last["close"] > last["ema99"])
+    except:
+        is_trend = False
 
-    # 전략별 조건
-    # 1. 보수적 (Safe): 볼린저 밴드 상단 돌파 시 매수 금지 (과열 방지)
-    # BBU_20_2.0 컬럼 확인 필요
+    # 2. 매수 타이밍 포착 (Trigger Event)
+    # WPR 과매도 탈출 + 거래량 증가
+    is_wpr_trigger = bool(prev["wpr"] < wpr_level and last["wpr"] > wpr_level)
+    is_vol_trigger = bool(last["volume"] > (last["vol_ma"] * float(vol_mult)))
+    is_buy_signal = is_wpr_trigger and is_vol_trigger
+
+    # 3. 전략별 적합성 (State)
+    
+    # [보수적] 볼린저 밴드 상단 아래 (안전)
     bbu = last.get("BBU_20_2.0")
     bbm = last.get("BBM_20_2.0")
-    is_conservative = False
-    if base_signal and bbu is not None:
-        # 밴드 중간보다 위에 있고, 상단을 뚫지는 않았을 때 (안전 구간)
-        if last["close"] > bbm and last["close"] < bbu:
-            is_conservative = True
+    is_conservative_fit = False
+    if is_trend and bbu is not None:
+        if last["close"] < bbu: # 밴드 상단보다 아래면 OK (과열 아님)
+            is_conservative_fit = True
 
-    # 2. 중립적 (Neutral): MACD 골든크로스/상승 추세 확인
-    # MACDh_12_26_9 (Histogram) > 0
+    # [중립적] MACD 히스토그램 양수 (상승 모멘텀)
     hist = last.get("MACDh_12_26_9")
-    is_neutral = False
-    if base_signal and hist is not None:
-        # 히스토그램이 양수 (상승 모멘텀)
+    is_neutral_fit = False
+    if is_trend and hist is not None:
         if hist > 0:
-            is_neutral = True
+            is_neutral_fit = True
 
-    # 3. 공격적 (Aggressive): 변동성 돌파 (ATR 상승)
+    # [공격적] ATR 변동성 확대
     atr = last.get("atr")
     atr_ma = last.get("atr_ma")
-    is_aggressive = False
-    if base_signal and atr is not None and atr_ma is not None:
-        # 변동성이 평균보다 높아짐 (큰 움직임 예상)
-        if atr > atr_ma:
-            is_aggressive = True
+    is_aggressive_fit = False
+    if is_trend and atr is not None and atr_ma is not None:
+        if atr > atr_ma: # 변동성 확대 구간
+            is_aggressive_fit = True
 
-    # 하나라도 해당되면 표시 (또는 전체 리스트에 포함)
-    strategy_label = "관망"
-    if is_conservative: strategy_label = "🛡️ 보수적"
-    elif is_neutral: strategy_label = "⚖️ 중립적"
-    elif is_aggressive: strategy_label = "⚔️ 공격적"
+    # 4. 결과 판정
+    # 전략에 맞으면 일단 리스트에는 올림 (관망)
+    # 타이밍까지 맞으면 (매수)
     
-    # 공통 데이터 추가 (모든 종목 포함)
-    status_data.append({
-        "종목": symbol,
-        "현재가": float(last["close"]),
-        "WPR": round(float(last["wpr"]), 2),
-        "RSI": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
-        "전략": strategy_label if (is_conservative or is_neutral or is_aggressive) else "-",
-        "신호": "진입 가능" if (is_conservative or is_neutral or is_aggressive) else "대기",
-        "is_conservative": is_conservative,
-        "is_neutral": is_neutral,
-        "is_aggressive": is_aggressive
-    })
+    strategy_label = "-"
+    signal_label = "대기"
+    
+    # 우선순위: 공격 > 중립 > 보수 (하나만 표시할 경우)
+    active_strategies = []
+    if is_conservative_fit: active_strategies.append("🛡️ 보수적")
+    if is_neutral_fit: active_strategies.append("⚖️ 중립적")
+    if is_aggressive_fit: active_strategies.append("⚔️ 공격적")
+    
+    if active_strategies:
+        strategy_label = ", ".join(active_strategies)
+        signal_label = "관망 중" # 기본 상태
+    
+    # 매수 신호 발생 시
+    final_buy = False
+    if active_strategies and is_buy_signal:
+        signal_label = "🚀 강력 매수"
+        final_buy = True
 
-    # 모의 매수 (어떤 전략이든 강력 신호면 매수)
+    # 공통 데이터 추가 (전략에 하나라도 맞거나, 전체 탭용)
+    # 전체 탭에는 추세가 좋은 종목은 다 보여줌
+    if is_trend or active_strategies:
+        status_data.append({
+            "종목": symbol,
+            "현재가": float(last["close"]),
+            "WPR": round(float(last["wpr"]), 2),
+            "RSI": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
+            "전략": strategy_label,
+            "신호": signal_label,
+            "is_conservative": is_conservative_fit,
+            "is_neutral": is_neutral_fit,
+            "is_aggressive": is_aggressive_fit
+        })
+
+    # 모의 매수 (강력 매수 시)
     buy_msg = None
-    if is_conservative or is_neutral or is_aggressive:
+    if final_buy:
         # 중복 매수 방지
         if symbol in portfolio["holdings"] and portfolio["holdings"][symbol]["amount"] > 0:
              buy_msg = "보유 중 (스킵)"
         else:
             success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=100.0)
-            # 로그는 너무 길어지니 생략하거나 가장 강력한 전략 하나만 표시
             
     progress.progress(i / len(top_symbols), text=f"스캔 중… ({i}/{len(top_symbols)})")
 
