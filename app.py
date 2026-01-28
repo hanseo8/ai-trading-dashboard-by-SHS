@@ -170,6 +170,8 @@ except Exception as e:
 symbols = [s for s in markets.keys() if isinstance(s, str) and s.endswith("/USDT")]
 top_symbols = sorted(symbols, key=lambda x: safe_quote_volume(markets, x), reverse=True)[: int(top_n)]
 
+
+current_prices = {}
 status_data = []
 progress = st.progress(0, text="스캔 중…")
 for i, symbol in enumerate(top_symbols, start=1):
