@@ -314,13 +314,11 @@ URGENT_KEYWORDS = ["상장", "해킹", "유의", "폐지", "폭락", "SEC", "공
 
 def display_news_with_filter():
     # 뉴스 컨테이너 시작
-    news_html = """
-    <div class="news-container">
+    news_html = """<div class="news-container">
         <div style='display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;'>
             <h4 style='margin:0; color: #FFF;'>🔔 실시간 속보</h4>
             <span class='live-dot'>● LIVE</span>
-        </div>
-    """
+        </div>"""
     
     # 1. 국내 뉴스 (RSS)
     rss_url = "https://kr.investing.com/rss/news_25.rss"
@@ -333,8 +331,8 @@ def display_news_with_filter():
             items = soup.find_all("item")
             
             for item in items[:15]: # 15개로 증가
-                title = item.find("title").text
-                link = item.find("link").text
+                title = item.find("title").text.strip()
+                link = item.find("link").text.strip()
                 try:
                     # XML 태그 대소문자 문제 대응 (pubDate vs pubdate)
                     p_text = item.find("pubdate")
@@ -353,15 +351,17 @@ def display_news_with_filter():
                 badge_html = ""
                 if is_urgent:
                     badge_html = "<span class='badge badge-danger'>긴급</span>"
-                    title_html = f"<span style='color: var(--neon-red); font-weight: bold;'>{title}</span>"
+                    title_html = f"<span style='color: #FF0055; font-weight: bold;'>{title}</span>"
                 else:
                     badge_html = "<span class='badge badge-info'>뉴스</span>"
                     title_html = f"<span style='color: #DDD;'>{title}</span>"
                 
-                news_html += f"""<div style='margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;'>
+                # HTML 들여쓰기 제거 (매우 중요)
+                item_html = f"""<div style='margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;'>
     <div style='font-size: 0.8em; color: #888; margin-bottom: 4px;'>{badge_html} {pubDate}</div>
     <a href='{link}' target='_blank' style='text-decoration: none;'>{title_html}</a>
 </div>"""
+                news_html += item_html
         else:
             news_html += f"<div style='color:red'>RSS 로딩 실패 ({response.status_code})</div>"
     except Exception as e:
@@ -369,11 +369,9 @@ def display_news_with_filter():
 
     # 2. 글로벌 뉴스 (CryptoPanic Mockup)
     news_html += "<h5 style='margin-top: 20px; color: #BBB; border-top: 1px dashed #444; padding-top: 10px;'>🌍 Global Feed</h5>"
-    news_html += """
-    <div style='margin-bottom: 10px;'>
+    news_html += """<div style='margin-bottom: 10px;'>
         <span class='badge badge-info'>System</span> <span style='color: #DDD;'>Monitoring Global Markets...</span>
-    </div>
-    """
+    </div>"""
     
     news_html += "</div>" # 컨테이너 종료
     st.markdown(news_html, unsafe_allow_html=True)
