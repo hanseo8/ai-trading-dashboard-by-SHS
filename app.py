@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v7.7 STABILITY RESTORE ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v7.8 DEBUG TRAP ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -592,17 +592,24 @@ results = []
 errors = []
 
 # [STABILITY FIX] 병렬 처리 제거 -> 순차 처리로 복귀 (안정성 최우선)
-for i, symbol in enumerate(top_symbols):
-    # Global 'timeframe' variable access
-    df, err = fetch_raw_data_safe(symbol, timeframe)
-    
-    if df is not None:
-         results.append((symbol, df))
-    else:
-         errors.append(f"{symbol}: {err}")
-    
-    # 진행률 업데이트
-    progress_bar.progress((i + 1) / len(top_symbols), text=f"{progress_text} ({i + 1}/{len(top_symbols)})")
+try:
+    for i, symbol in enumerate(top_symbols):
+        # Global 'timeframe' variable access
+        df, err = fetch_raw_data_safe(symbol, timeframe)
+        
+        if df is not None:
+             results.append((symbol, df))
+        else:
+             errors.append(f"{symbol}: {err}")
+        
+        # 진행률 업데이트
+        progress_bar.progress((i + 1) / len(top_symbols), text=f"{progress_text} ({i + 1}/{len(top_symbols)})")
+
+except Exception as e:
+    col_main.error(f"❌ 치명적 오류 발생: {str(e)}")
+    col_main.code(traceback.format_exc())
+    # 에러 발생해도 일부 결과라도 있으면 보여주기 위해 진행
+    pass
 
 if debug_mode and errors:
     col_main.error(f"스캔 실패 ({len(errors)}개): {errors[:5]}...")
