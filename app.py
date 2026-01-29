@@ -721,9 +721,11 @@ else:
         use_container_width=True,
         hide_index=True
     )
+    col_main.markdown('</div>', unsafe_allow_html=True) # Scanner Card 종료
 
 # 포트폴리오 상세
-col_main.divider()
+# col_main.divider() -> 카드 간격으로 대체
+col_main.markdown('<div class="stCard">', unsafe_allow_html=True) # Portfolio Card 시작
 col_main.subheader("💼 내 포트폴리오")
 
 # 현재가 갱신을 위해 스캔된 데이터 활용 (또는 별도 조회 필요)
@@ -741,7 +743,8 @@ else:
     df_pf = pd.DataFrame(portfolio_updated["details"])
     col_main.dataframe(df_pf, use_container_width=True, hide_index=True)
 
-col_main.divider()
+col_main.markdown('</div>', unsafe_allow_html=True) # Portfolio Card 종료
+col_main.markdown('<div class="stCard">', unsafe_allow_html=True) # History Card 시작
 col_main.markdown("##### 📝 통합 매매 기록 (모든 전략)")
 
 # 모든 포트폴리오 파일에서 기록 취합
@@ -806,9 +809,11 @@ else:
         
     col_main.dataframe(pd.DataFrame(display_trades), use_container_width=True, hide_index=True)
 
+col_main.markdown('</div>', unsafe_allow_html=True) # History Card 종료
+
 with st.sidebar:
     if not enable_lock:
-        if st.button("포트폴리오 초기화"):
+        if st.button("포트폴리오 초기화", key="reset_pf_btn"):
             pt.reset_portfolio(filename=portfolio_file)
             st.rerun()
     else:
@@ -816,7 +821,7 @@ with st.sidebar:
 
 
 # 상세 차트 보기 (선택한 종목)
-col_main.divider()
+col_main.markdown('<div class="stCard">', unsafe_allow_html=True) # Chart Card 시작
 col_main.subheader("📊 상세 차트")
 
 if df_all.empty:
