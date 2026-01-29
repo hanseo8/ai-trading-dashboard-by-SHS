@@ -140,6 +140,26 @@ def apply_custom_styles():
         .badge-danger { background-color: rgba(255, 0, 85, 0.2); color: var(--neon-red); border: 1px solid var(--neon-red); }
         .badge-info { background-color: rgba(0, 210, 255, 0.2); color: var(--cyber_blue); border: 1px solid var(--cyber_blue); }
 
+        /* 9. Sidebar & Input Visibility Fix */
+        [data-testid="stSidebar"] {
+            background-color: #16181C !important; /* 사이드바 강제 다크 */
+        }
+        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
+            color: #E0E0E0 !important; /* 텍스트 밝게 */
+        }
+        .stMarkdown, .stText, p {
+            color: #E0E0E0 !important;
+        }
+        /* 입력 위젯 (Selectbox, Slider) 텍스트 가시성 확보 */
+        .stSelectbox div[data-baseweb="select"] > div {
+            background-color: #262730 !important;
+            color: #FFF !important;
+        }
+        .stSlider div[data-baseweb="slider"] {
+            /* 슬라이더 트랙 색상 등 */
+        }
+        .st-cj { color: #FFF !important; } /* 체크박스 등 텍스트 */
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -318,12 +338,10 @@ def display_news_with_filter():
                     badge_html = "<span class='badge badge-info'>뉴스</span>"
                     title_html = f"<span style='color: #DDD;'>{title}</span>"
                 
-                news_html += f"""
-                <div style='margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;'>
-                    <div style='font-size: 0.8em; color: #888; margin-bottom: 4px;'>{badge_html} {pubDate}</div>
-                    <a href='{link}' target='_blank' style='text-decoration: none;'>{title_html}</a>
-                </div>
-                """
+                news_html += f"""<div style='margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;'>
+    <div style='font-size: 0.8em; color: #888; margin-bottom: 4px;'>{badge_html} {pubDate}</div>
+    <a href='{link}' target='_blank' style='text-decoration: none;'>{title_html}</a>
+</div>"""
         else:
             news_html += f"<div style='color:red'>RSS 로딩 실패 ({response.status_code})</div>"
     except Exception as e:
