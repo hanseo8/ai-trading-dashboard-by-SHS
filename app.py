@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.3 HIGH STAKES ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.4 CLEAN UI ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -516,25 +516,19 @@ top_symbols = sorted(symbols, key=lambda x: safe_quote_volume(markets, x), rever
 
 import concurrent.futures
 
-# BTC 추세 확인 (안전장치)
-exchange = get_exchange()
-is_bull, btc_price, btc_ema = get_btc_trend(exchange)
-
-btc_status_text = "상승장 (매수 가능) 🚀" if is_bull else "하락장 (매수 중단) 🛡️"
-btc_color = "green" if is_bull else "red"
-
-# Pulse Animation Class 적용
-pulse_class = "pulse-red" if not is_bull else ""
-col_main.markdown(f"""
-<div class="stCard {pulse_class}" style="padding: 10px; text-align: center; margin-bottom: 15px;">
-    <h4 style='margin:0'>BTC 추세(15m/EMA99): :{btc_color}[{btc_status_text}] ({btc_price:,.1f} vs {btc_ema:,.1f})</h4>
-</div>
-""", unsafe_allow_html=True)
-
-# (BTC Trend Warning Disabled)
+# BTC 추세 확인 (User Request: Remove Banner)
+# exchange = get_exchange()
+# is_bull, btc_price, btc_ema = get_btc_trend(exchange)
+# btc_status_text = "상승장 (매수 가능) 🚀" if is_bull else "하락장 (매수 중단) 🛡️"
+# btc_color = "green" if is_bull else "red"
+# pulse_class = "pulse-red" if not is_bull else ""
+# col_main.markdown(f"""
+# <div class="stCard {pulse_class}" style="padding: 10px; text-align: center; margin-bottom: 15px;">
+#     <h4 style='margin:0'>BTC 추세(15m/EMA99): :{btc_color}[{btc_status_text}] ({btc_price:,.1f} vs {btc_ema:,.1f})</h4>
+# </div>
+# """, unsafe_allow_html=True)
 # if not is_bull:
 #     col_main.warning("비트코인이 추세선(EMA99) 아래에 있어 신규 매수를 일시 중단합니다.")
-
 
 current_prices = {}
 status_data = []
