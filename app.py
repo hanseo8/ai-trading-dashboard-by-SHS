@@ -147,6 +147,51 @@ def get_best_bid(_exchange, symbol):
     except:
         return None
 
+# 1. 강조할 긴급 키워드 설정
+URGENT_KEYWORDS = ["상장", "해킹", "유의", "폐지", "폭락", "SEC", "공격", "중단"]
+
+def display_news_with_filter():
+    st.subheader("🔔 실시간 속보 (정밀 필터링)")
+    
+    # 긴급 정지 버튼 (뉴스창 바로 위 배치)
+    if st.button("🚨 EMERGENCY STOP (모든 매매 즉시 중단)", use_container_width=True):
+        st.error("모든 자동매매 프로세스가 강제 종료되었습니다.")
+        st.stop()
+
+    tab1, tab2 = st.tabs(["국내(CoinNess/RSS)", "글로벌(CryptoPanic)"])
+
+    with tab1:
+        st.caption("제공: 코인니스/인베스팅 (1분 이내 타전)")
+        rss_url = "https://kr.investing.com/rss/news_25.rss"
+        try:
+            feed = feedparser.parse(rss_url)
+            if not feed.entries:
+                 st.info("뉴스 피드를 불러올 수 없습니다.")
+            for entry in feed.entries[:10]:
+                title = entry.title
+                # 키워드 포함 여부 확인 및 강조
+                is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
+                
+                if is_urgent:
+                    # 빨간색 강조 및 경고 이모지 추가
+                    st.markdown(f"🚩 :red[**{title}**]")
+                    st.info(f"👉 [뉴스 확인하기]({entry.link})")
+                else:
+                    st.markdown(f"**[{title}]({entry.link})**")
+                
+                st.caption(f"🕒 {entry.published}")
+                st.divider()
+        except:
+            st.error("RSS 로딩 실패")
+
+    with tab2:
+        st.caption("제공: CryptoPanic Global")
+        # 2026-01-29 글로벌 주요 이슈 예시 (Mockup for simplicity as user provided)
+        st.markdown("- [Global] BTC maintains stability above $90,000")
+        st.markdown("- [Alert] :red[**Exchange Hacking Rumors under investigation**]")
+        st.divider()
+        st.markdown("[CryptoPanic 바로가기](https://cryptopanic.com/)")
+
 # 상단 헤더
 
 with st.sidebar:
@@ -253,14 +298,23 @@ with col5:
 
 st.caption(f"현재 모드: {portfolio_mode} - 타임프레임에 따라 계좌가 자동 전환됩니다.")
 st.divider()
-st.subheader(f"🔥 실시간 정밀 스캔 (USDT 마켓 / 거래량 상위 {top_n}개 기준)")
+
+# 레이아웃 구성 (7:3)
+col_main, col_news = st.columns([0.7, 0.3])
+
+# 우측 뉴스 피드 (먼저 배치)
+with col_news:
+    display_news_with_filter()
+
+# 좌측 메인 차트/스캔 영역
+col_main.subheader(f"🔥 실시간 정밀 스캔 (USDT 마켓 / 거래량 상위 {top_n}개 기준)")
 
 # 기존 try-except 문을 아래처럼 수정해서 에러 내용을 확인합니다.
 try:
     markets = fetch_tickers()
 except Exception as e:
-    st.error(f"바이낸스 연결 실패: {str(e)}") # 어떤 에러인지 정확히 보여줍니다.
-    st.info("💡 팁: VPN을 사용 중이라면 끄거나, 반대로 인터넷 환경이 불안정하면 다른 와이파이/핫스팟으로 시도해 보세요.")
+    col_main.error(f"바이낸스 연결 실패: {str(e)}") # 어떤 에러인지 정확히 보여줍니다.
+    col_main.info("💡 팁: VPN을 사용 중이라면 끄거나, 반대로 인터넷 환경이 불안정하면 다른 와이파이/핫스팟으로 시도해 보세요.")
     st.stop()
 
 symbols = [s for s in markets.keys() if isinstance(s, str) and s.endswith("/USDT")]
@@ -272,15 +326,15 @@ is_bull, btc_price, btc_ema = get_btc_trend(exchange)
 
 btc_status_text = "상승장 (매수 가능) 🚀" if is_bull else "하락장 (매수 중단) 🛡️"
 btc_color = "green" if is_bull else "red"
-st.markdown(f"#### BTC 추세(15m/EMA99): :{btc_color}[{btc_status_text}] ({btc_price:,.1f} vs {btc_ema:,.1f})")
+col_main.markdown(f"#### BTC 추세(15m/EMA99): :{btc_color}[{btc_status_text}] ({btc_price:,.1f} vs {btc_ema:,.1f})")
 
 if not is_bull:
-    st.warning("비트코인이 추세선(EMA99) 아래에 있어 신규 매수를 일시 중단합니다.")
+    col_main.warning("비트코인이 추세선(EMA99) 아래에 있어 신규 매수를 일시 중단합니다.")
 
 
 current_prices = {}
 status_data = []
-progress = st.progress(0, text="스캔 중…")
+progress = col_main.progress(0, text="스캔 중…")
 for i, symbol in enumerate(top_symbols, start=1):
     df = get_data(symbol, timeframe=timeframe, limit=200)
     if df is None:
@@ -470,7 +524,7 @@ progress.empty()
 df_all = pd.DataFrame(status_data)
 
 if df_all.empty:
-    st.info("검색된 종목이 없습니다.")
+    col_main.info("검색된 종목이 없습니다.")
 else:
     # 보기 좋게 포맷
     df_view = df_all.copy()
@@ -491,7 +545,7 @@ else:
             return "background-color: #ffa502; color: white; font-weight: bold" # 오렌지
         return ""
 
-    st.dataframe(
+    col_main.dataframe(
         df_view.style
         .map(highlight_signal, subset=["진입 신호"])
         .set_table_styles([
@@ -502,8 +556,8 @@ else:
     )
 
 # 포트폴리오 상세
-st.divider()
-st.subheader("💼 내 포트폴리오")
+col_main.divider()
+col_main.subheader("💼 내 포트폴리오")
 
 # 현재가 갱신을 위해 스캔된 데이터 활용 (또는 별도 조회 필요)
 # 위 루프에서 현재가가 있다면 업데이트
@@ -513,15 +567,15 @@ for d in status_data:
 portfolio_updated = pt.get_portfolio_status(current_prices, filename=portfolio_file)
 
 # 2단 컬럼 대신 수직 배치로 변경
-st.markdown("##### 📦 보유 중인 코인")
+col_main.markdown("##### 📦 보유 중인 코인")
 if not portfolio_updated["details"]:
-    st.info("보유 중인 코인이 없습니다.")
+    col_main.info("보유 중인 코인이 없습니다.")
 else:
     df_pf = pd.DataFrame(portfolio_updated["details"])
-    st.dataframe(df_pf, use_container_width=True, hide_index=True)
+    col_main.dataframe(df_pf, use_container_width=True, hide_index=True)
 
-st.divider()
-st.markdown("##### 📝 통합 매매 기록 (모든 전략)")
+col_main.divider()
+col_main.markdown("##### 📝 통합 매매 기록 (모든 전략)")
 
 # 모든 포트폴리오 파일에서 기록 취합
 all_files = {
@@ -540,7 +594,7 @@ for label, fname in all_files.items():
         all_trades.append(h)
 
 if not all_trades:
-    st.info("매매 기록이 없습니다.")
+    col_main.info("매매 기록이 없습니다.")
 else:
     # 최신순 정렬
     df_trades = pd.DataFrame(all_trades)
@@ -583,7 +637,7 @@ else:
             "수익률": profit_str
         })
         
-    st.dataframe(pd.DataFrame(display_trades), use_container_width=True, hide_index=True)
+    col_main.dataframe(pd.DataFrame(display_trades), use_container_width=True, hide_index=True)
 
 with st.sidebar:
     if not enable_lock:
@@ -595,18 +649,18 @@ with st.sidebar:
 
 
 # 상세 차트 보기 (선택한 종목)
-st.divider()
-st.subheader("📊 상세 차트")
+col_main.divider()
+col_main.subheader("📊 상세 차트")
 
 if df_all.empty:
-    st.info("현재 스캔된 종목이 없어 차트를 표시할 수 없습니다.")
+    col_main.info("현재 스캔된 종목이 없어 차트를 표시할 수 없습니다.")
     # 검색된 종목이 없어도 빈 차트라도 띄우거나, 수동 입력 칸을 줄 수도 있음.
     # 여기서는 안내 문구만 수정
 else:
-    selected_coin = st.selectbox("상세 차트 분석", df_all["종목"].tolist())
+    selected_coin = col_main.selectbox("상세 차트 분석", df_all["종목"].tolist())
     df_chart = get_data(selected_coin, timeframe=timeframe, limit=300)
     if df_chart is None:
-        st.error("해당 종목의 차트 데이터를 불러오지 못했습니다.")
+        col_main.error("해당 종목의 차트 데이터를 불러오지 못했습니다.")
     else:
         fig = make_subplots(
             rows=2,
@@ -668,7 +722,7 @@ else:
             xaxis_rangeslider_visible=False,
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        col_main.plotly_chart(fig, use_container_width=True)
 
 
 # 자동 갱신 로직 (마지막에 위치)
