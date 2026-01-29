@@ -360,7 +360,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v6.4 FINAL SPEED ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v6.5 VARIABLE FIX ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -779,8 +779,8 @@ for symbol, df in results:
                     print(f"💰 {sell_reason}: {symbol} ({profit_pct:.2f}%)")
 
     progress.progress(i / len(top_symbols), text=f"스캔 중… ({i}/{len(top_symbols)})")
-
-progress.empty()
+# 스캔 완료 후 프로그레스 바 제거
+progress_bar.empty()
 
 # 필터링 없이 전체 리스트 출력 (메인 화면 단순화)
 df_all = pd.DataFrame(status_data)
