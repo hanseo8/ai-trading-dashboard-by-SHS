@@ -10,35 +10,15 @@ import time
 import math
 import textwrap
 
-# ... (Previous imports)
+# 페이지 설정
+st.set_page_config(page_title="서한석의 코인 자동매매", layout="wide")
 
-# ...
-
-# 1. 제목 (중앙 정렬 + 밑줄 장식)
-# CSS로 스타일링된 HTML 타이틀
-st.markdown("""
-<div style='text-align: center; margin-bottom: 30px;'>
-    <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v2.1 Fix</span>
-    </h1>
-</div>
-""", unsafe_allow_html=True)
-
-# ...
-
-def display_news_with_filter():
-    # 뉴스 컨테이너 시작
-    # textwrap.dedent를 사용하여 공백 문제 완전 해결
-    news_html = textwrap.dedent("""
-        <div class="news-container">
-            <div style='display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;'>
-                <h4 style='margin:0; color: #FFF;'>🔔 실시간 속보</h4>
-                <span class='live-dot'>● LIVE</span>
-            </div>
-    """).strip()
+def apply_custom_styles():
+    st.markdown("""
+    <style>
         :root {
             --bg-color: #0E1117;
-            --card-bg: #1E1E1E; /* 딥 차콜/블랙 */
+            --card-bg: #1E1E1E;
             --text-color: #E0E0E0;
             --neon-green: #00FFA3;
             --neon-red: #FF0055;
@@ -46,13 +26,8 @@ def display_news_with_filter():
             --border-radius: 12px;
         }
         
-        /* 2. Main Container Background */
-        .stApp {
-            background-color: var(--bg-color);
-            color: var(--text-color);
-        }
+        .stApp { background-color: var(--bg-color); color: var(--text-color); }
         
-        /* 3. Card Components (Shadow & Round) */
         .stCard {
             background-color: var(--card-bg);
             padding: 20px;
@@ -62,39 +37,22 @@ def display_news_with_filter():
             border: 1px solid #333;
         }
         
-        /* 4. News Feed Container (Independent Scroll) */
         .news-container {
-            background-color: #16181C; /* 더 어두운 배경 */
+            background-color: #16181C;
             padding: 15px;
             border-radius: var(--border-radius);
-            height: 600px; /* 고정 높이 */
-            overflow-y: auto; /* 독립 스크롤 */
+            height: 600px;
+            overflow-y: auto;
             border-left: 2px solid #333;
             box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
         }
         
-        /* Scrollbar Customization */
-        .news-container::-webkit-scrollbar {
-            width: 8px;
-        }
-        .news-container::-webkit-scrollbar-track {
-            background: #111; 
-        }
-        .news-container::-webkit-scrollbar-thumb {
-            background: #444; 
-            border-radius: 4px;
-        }
-        .news-container::-webkit-scrollbar-thumb:hover {
-            background: #666; 
-        }
+        .news-container::-webkit-scrollbar { width: 8px; }
+        .news-container::-webkit-scrollbar-track { background: #111; }
+        .news-container::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        .news-container::-webkit-scrollbar-thumb:hover { background: #666; }
         
-        /* 5. Metric Cards (Flexbox) */
-        .metric-row {
-            display: flex;
-            gap: 15px;
-            justify-content: space-between;
-            margin-bottom: 20px;
-        }
+        .metric-row { display: flex; gap: 15px; justify-content: space-between; margin-bottom: 20px; }
         .metric-card {
             background-color: var(--card-bg);
             flex: 1;
@@ -104,96 +62,51 @@ def display_news_with_filter():
             border: 1px solid #333;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
-        .metric-label {
-            font-size: 0.9em;
-            color: #888;
-            margin-bottom: 5px;
-        }
-        .metric-value {
-            font-size: 1.6em;
-            font-weight: bold;
-            color: #FFF;
-        }
-        .metric-delta {
-            font-size: 0.9em;
-        }
+        .metric-label { font-size: 0.9em; color: #888; margin-bottom: 5px; }
+        .metric-value { font-size: 1.6em; font-weight: bold; color: #FFF; }
+        .metric-delta { font-size: 0.9em; }
         .delta-pos { color: var(--neon-green); }
         .delta-neg { color: var(--neon-red); }
         
-        /* 6. Pulse Animation (Red Alert) */
         @keyframes pulse-red {
             0% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0.4); }
             70% { box-shadow: 0 0 0 10px rgba(255, 0, 85, 0); }
             100% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0); }
         }
-        .pulse-red {
-            animation: pulse-red 2s infinite;
-            border: 1px solid var(--neon-red) !important;
-        }
+        .pulse-red { animation: pulse-red 2s infinite; border: 1px solid var(--neon-red) !important; }
         
-        /* 7. Live Feed Header Pulse */
         @keyframes blink {
             0% { opacity: 1; }
             50% { opacity: 0.4; }
             100% { opacity: 1; }
         }
-        .live-dot {
-            color: red;
-            animation: blink 1.5s infinite;
-        }
+        .live-dot { color: red; animation: blink 1.5s infinite; }
         
-        /* 8. Badge Styles */
-        .badge {
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.8em;
-            font-weight: bold;
-            margin-right: 5px;
-        }
+        .badge { padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: bold; margin-right: 5px; }
         .badge-danger { background-color: rgba(255, 0, 85, 0.2); color: var(--neon-red); border: 1px solid var(--neon-red); }
         .badge-info { background-color: rgba(0, 210, 255, 0.2); color: var(--cyber_blue); border: 1px solid var(--cyber_blue); }
 
-        /* 9. Sidebar & Input Visibility Fix (Aggressive) */
-        [data-testid="stSidebar"] {
-            background-color: #16181C !important;
-        }
-        [data-testid="stSidebar"] * {
-            color: #E0E0E0 !important; /* 모든 요소 강제 적용 */
-        }
-        /* 예외: 활성화된 버튼/인풋 등은 허용 */
-        [data-testid="stSidebar"] button {
-             color: white !important;
-        }
+        /* Sidebar Fix */
+        section[data-testid="stSidebar"] { background-color: #16181C !important; }
+        section[data-testid="stSidebar"] * { color: #E0E0E0 !important; }
+        section[data-testid="stSidebar"] button { color: white !important; }
         
-        /* 10. Global Text Fix */
-        .stMarkdown, .stText, p, h1, h2, h3, h4, h5, h6 {
-            color: #E0E0E0 !important;
-        }
+        .stMarkdown, .stText, p, h1, h2, h3, h4, h5, h6 { color: #E0E0E0 !important; }
         
-        /* 11. Selectbox & Slider Customization */
-        div[data-baseweb="select"] > div {
-            background-color: #262730 !important;
-            color: #FFF !important;
-            border-color: #444 !important;
-        }
-        div[data-baseweb="popover"] div {
-            background-color: #262730 !important;
-            color: #FFF !important;
-        }
-        div[role="listbox"] li {
-            background-color: #262730 !important;
-            color: #FFF !important;
-        }
+        div[data-baseweb="select"] > div { background-color: #262730 !important; color: #FFF !important; border-color: #444 !important; }
+        div[data-baseweb="popover"] div { background-color: #262730 !important; color: #FFF !important; }
+        div[role="listbox"] li { background-color: #262730 !important; color: #FFF !important; }
 
     </style>
     """, unsafe_allow_html=True)
 
 apply_custom_styles()
 
-# 타이틀 (커스텀 HTML)
 st.markdown("""
 <div style='text-align: center; margin-bottom: 30px;'>
-    <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span></h1>
+    <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v2.2 FINAL</span>
+    </h1>
 </div>
 """, unsafe_allow_html=True)
 
@@ -326,62 +239,56 @@ def get_best_bid(_exchange, symbol):
 URGENT_KEYWORDS = ["상장", "해킹", "유의", "폐지", "폭락", "SEC", "공격", "중단"]
 
 def display_news_with_filter():
-    # 뉴스 컨테이너 시작
-    news_html = """<div class="news-container">
-        <div style='display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;'>
-            <h4 style='margin:0; color: #FFF;'>🔔 실시간 속보</h4>
-            <span class='live-dot'>● LIVE</span>
-        </div>"""
+    # 뉴스 컨테이너 시작 (Indentation Free)
+    news_html = '<div class="news-container">'
+    news_html += '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">'
+    news_html += '<h4 style="margin:0; color: #FFF;">🔔 실시간 속보</h4><span class="live-dot">● LIVE</span></div>'
     
     # 1. 국내 뉴스 (RSS)
     rss_url = "https://kr.investing.com/rss/news_25.rss"
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         response = requests.get(rss_url, headers=headers, timeout=5)
         
         if response.status_code == 200:
-            soup = BeautifulSoup(response.content, "html.parser")
+            soup = BeautifulSoup(response.content, "xml") # XML 파서 사용 권장
             items = soup.find_all("item")
             
-            for item in items[:15]: # 15개로 증가
+            for item in items[:20]:
                 title = item.find("title").text.strip()
                 link = item.find("link").text.strip()
-                try:
-                    # XML 태그 대소문자 문제 대응 (pubDate vs pubdate)
-                    p_text = item.find("pubdate")
-                    if not p_text:
-                        p_text = item.find("pubDate")
-                    
-                    if p_text:
-                        pubDate = p_text.text[17:22]
-                    else:
-                        pubDate = ""
-                except:
-                    pubDate = ""
-
+                
+                # Date Processing
+                pubDate = ""
+                p_tag = item.find("pubDate") or item.find("pubdate")
+                if p_tag:
+                    # ex: Mon, 29 Jan 2026 14:30:00 GMT
+                    pubDate = p_tag.text[17:22]
+                
                 is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
                 
-                badge_html = ""
+                badge_html = "<span class='badge badge-info'>뉴스</span>"
+                title_style = "color: #DDD;"
+                
                 if is_urgent:
                     badge_html = "<span class='badge badge-danger'>긴급</span>"
-                    title_html = f"<span style='color: #FF0055; font-weight: bold;'>{title}</span>"
-                else:
-                    badge_html = "<span class='badge badge-info'>뉴스</span>"
-                    title_html = f"<span style='color: #DDD;'>{title}</span>"
+                    title_style = "color: #FF0055; font-weight: bold;"
                 
-                # HTML 들여쓰기 제거 (한 줄로 작성)
-                item_html = f"<div style='margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;'><div style='font-size: 0.8em; color: #888; margin-bottom: 4px;'>{badge_html} {pubDate}</div><a href='{link}' target='_blank' style='text-decoration: none;'>{title_html}</a></div>"
-                news_html += item_html
+                # Single Line HTML Construction
+                news_html += f'<div style="margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;">'
+                news_html += f'<div style="font-size: 0.8em; color: #888; margin-bottom: 4px;">{badge_html} {pubDate}</div>'
+                news_html += f'<a href="{link}" target="_blank" style="text-decoration: none;"><span style="{title_style}">{title}</span></a>'
+                news_html += '</div>'
         else:
-            news_html += f"<div style='color:red'>RSS 로딩 실패 ({response.status_code})</div>"
+            news_html += f'<div style="color:red">RSS 로딩 실패 ({response.status_code})</div>'
     except Exception as e:
-        news_html += f"<div style='color:red'>RSS 에러: {str(e)}</div>"
+        news_html += f'<div style="color:red">RSS 에러: {str(e)}</div>'
 
-    # 글로벌 뉴스
-    news_html += "<h5 style='margin-top: 20px; color: #BBB; border-top: 1px dashed #444; padding-top: 10px;'>🌍 Global Feed</h5>"
-    news_html += "<div style='margin-bottom: 10px;'><span class='badge badge-info'>System</span> <span style='color: #DDD;'>Monitoring Global Markets...</span></div>"
+    # Global News
+    news_html += '<h5 style="margin-top: 20px; color: #BBB; border-top: 1px dashed #444; padding-top: 10px;">🌍 Global Feed</h5>'
+    news_html += '<div style="margin-bottom: 10px;"><span class="badge badge-info">System</span> <span style="color: #DDD;">Monitoring Global Markets...</span></div>'
     
-    news_html += "</div>" # 컨테이너 종료
+    news_html += '</div>' # End container
     st.markdown(news_html, unsafe_allow_html=True)
 
 
