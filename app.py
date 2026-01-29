@@ -903,6 +903,17 @@ else:
 
         col_main.plotly_chart(fig, use_container_width=True)
 
+col_main.markdown('</div>', unsafe_allow_html=True) # Chart Card 종료
+
+# 사이드바 하단에 긴급 정지 버튼 배치
+with st.sidebar:
+    st.divider()
+    st.markdown("### ⚠️ 긴급 통제")
+    # type="primary"는 붉은색(테마 설정에 따라 다름) 또는 강조
+    if st.button("🚨 EMERGENCY STOP", type="primary", use_container_width=True):
+        st.error("모든 매매 프로세스 강제 중단!")
+        st.stop()
+    st.caption("모든 자동매매가 즉시 중단됩니다.")
 
 # 자동 갱신 로직 (마지막에 위치)
 if auto_refresh:
