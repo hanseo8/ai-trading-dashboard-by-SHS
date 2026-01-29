@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import pandas as pd
 from datetime import datetime
 
@@ -11,17 +12,24 @@ def load_portfolio(filename=PORTFOLIO_FILE):
     if not os.path.exists(filename):
         return {
             "balance": DEFAULT_BALANCE,
-            "holdings": {},  # { "BTC/USDT": { "amount": 0.1, "avg_price": 50000 } }
-            "history": []    # [ { "time": "...", "type": "buy", ... } ]
+            "holdings": {},
+            "history": []
         }
     try:
         with open(filename, "r", encoding="utf-8") as f:
             data = json.load(f)
             # 호환성 보장: history 키가 없으면 추가
             if "history" not in data:
-                data["history"] = data.get("trades", []) # 기존 trades가 있다면 가져옴
+                data["history"] = data.get("trades", []) 
             return data
-    except:
+    except Exception as e:
+        print(f"Error loading {filename}: {e}")
+        # 파일이 존재하는데 에러가 난 경우 (깨짐 등) -> 백업 후 초기화 (데이터 손실 방지용 백업)
+        if os.path.exists(filename) and os.path.getsize(filename) > 0:
+            backup_name = filename + ".bak"
+            shutil.copy(filename, backup_name)
+            print(f"Corrupted file backed up to {backup_name}")
+            
         return {
             "balance": DEFAULT_BALANCE,
             "holdings": {},

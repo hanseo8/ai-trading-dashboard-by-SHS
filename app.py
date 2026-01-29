@@ -453,23 +453,36 @@ else:
     st.dataframe(df_pf, use_container_width=True, hide_index=True)
 
 st.divider()
-st.markdown("##### 📝 최근 매매 기록 (완료된 거래)")
+st.markdown("##### 📝 통합 매매 기록 (모든 전략)")
 
-curr_pf = pt.load_portfolio(portfolio_file)
-trades = curr_pf.get("history", [])
+# 모든 포트폴리오 파일에서 기록 취합
+all_files = {
+    "단타": "portfolio_scalping.json",
+    "장기": "portfolio_long.json",
+    "고수": "portfolio_my.json"
+}
 
-if not trades:
+all_trades = []
+for label, fname in all_files.items():
+    pf_data = pt.load_portfolio(fname)
+    hist = pf_data.get("history", [])
+    # 출처 표기
+    for h in hist:
+        h["strategy"] = label
+        all_trades.append(h)
+
+if not all_trades:
     st.info("매매 기록이 없습니다.")
 else:
     # 최신순 정렬
-    df_trades = pd.DataFrame(trades)
+    df_trades = pd.DataFrame(all_trades)
     # 키 이름 호환성 체크 ('time' vs 'timestamp')
     if "time" in df_trades.columns:
         sort_key = "time"
     else:
-        sort_key = "timestamp" # 혹시 모를 대비
+        sort_key = "timestamp" 
         
-    df_trades = df_trades.sort_values(by=sort_key, ascending=False).head(20) # 20개로 늘림
+    df_trades = df_trades.sort_values(by=sort_key, ascending=False).head(30) # 30개로 늘림
     
     # 보기 좋게 가공
     display_trades = []
@@ -494,6 +507,7 @@ else:
         if "익절" in t_type: icon = "🟢"
         
         display_trades.append({
+            "전략": r.get("strategy", "-"), # 전략 구분 추가
             "시간": ts_str,
             "구분": f"{icon} {t_type}",
             "종목": symbol,
