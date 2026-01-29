@@ -181,8 +181,9 @@ with st.sidebar:
         timeframe = st.selectbox("타임프레임", ["15m"], index=0)
         portfolio_file = "portfolio_my.json"
         portfolio_label = "고수의 기법 (Triple Confirm)"
-        default_vol = 2.5 # 고수는 확실한 거래량
-        st.info("💡 15분봉 전용: 추세 + WPR/RSI + 거래량 폭발")
+        default_vol = 1.5 # "최소 1.5배는 터져야 진짜 수급"
+        default_wpr = -80 # "-85보다 -80이 적절"
+        st.info("💡 15분봉 실전 단타: 정배열(EMA7>25) + WPR(-80) 탈출 + 거래량(1.5배)")
 
     # 슬라이더 (key를 설정해서 전략 변경 시 리셋/재설정 되도록 유도하거나, value에 변수 할당)
     # key에 전략 모드를 포함시켜서 전환 시 새로운 값이 적용되도록 함
@@ -317,25 +318,27 @@ for i, symbol in enumerate(top_symbols, start=1):
     # --- 고수의 기법: 나만의 기법 (Master Strategy) ---
 
     # 1. 조건 정의
-    # 장기 추세(Filter): 가격이 EMA 99(장기 이평선) 위에 있어 전체적인 흐름이 상승장일 것.
+    # 장기 추세(Filter): 가격이 EMA 99(장기 이평선) 위에 있어 전체적인 흐름이 상승장일 것. -> BTC로 1차 필터했으므로 개별 종목은 정배열 체크
     is_master_trend = last["close"] > last["ema99"]
     
-    # 단기 눌림목(Trigger): RSI가 40 이하로 떨어졌다가 다시 대가리를 들거나(여기선 단순화), 
-    # Williams %R이 -85 바닥을 찍고 탈출하는 순간.
-    # 사용자 요청: WPR -85 기준 (설정값 wpr_level 사용)
+    # "정배열" (EMA7 > EMA25) 추가 (New Requirement)
+    is_master_align = last["ema7"] > last["ema25"]
+    
+    # WPR -80 탈출 (Trigger): 설정값 wpr_level 활용
     is_master_wpr = prev["wpr"] < wpr_level and last["wpr"] > wpr_level
     
-    # 거래량 폭발(Confirm): 설정값 배수 사용 (기존 2.5배 -> vol_mult)
+    # 거래량 폭발(Confirm): 설정값 배수 사용 (1.5배)
     is_master_vol = last["volume"] > (last["vol_ma"] * vol_mult)
     
-    # RSI 조건 (힘이 실리기 시작함)
+    # RSI 조건 (힘이 실리기 시작함) - 보조
     is_master_rsi = last["rsi14"] > 50
 
     # 2. 신호 결정
     master_signal = "관망"
-    if is_master_trend and is_master_wpr and is_master_vol:
-        master_signal = "🔥 역대급 타점 (강력매수)"
-    elif is_master_trend and is_master_rsi and is_master_vol:
+    # 조건: BTC상승(기본) + 정배열(EMA7>25) + WPR탈출 + 거래량폭발
+    if is_master_align and is_master_wpr and is_master_vol:
+        master_signal = "🔥 실전 단타 진입 (강력매수)"
+    elif is_master_trend and is_master_rsi and is_master_vol and is_master_wpr:
         master_signal = "⚡ 추세 돌파 (추격매수)"
 
     # 현재 모드에 맞는 신호 선택
