@@ -130,9 +130,10 @@ except Exception as e:
     st.stop()
 
 # Continue with main logic wrapper
-try:
-    # Remove @st.cache_resource temporarily to investigate if it's holding stale connection
-    def get_exchange() -> ccxt.Exchange:
+# try: removed to fix indentation error
+
+# Remove @st.cache_resource temporarily to investigate if it's holding stale connection
+def get_exchange() -> ccxt.Exchange:
     ex = ccxt.binance({
         "enableRateLimit": True,
         "options": {
