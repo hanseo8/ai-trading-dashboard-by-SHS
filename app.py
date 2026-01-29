@@ -420,11 +420,6 @@ for i, symbol in enumerate(top_symbols, start=1):
                     sell_reason = "손절 (-1.0%)"
                 # (기존 로직 유지) EMA 7 꺾임
                 elif last["ema7"] < prev["ema7"]:
-                # 단, 너무 잦은 손절 방지 위해 진입 후 약간의 마진? 
-                # 사용자 요청: "EMA 7선이 꺾일 때 즉시 실행"
-                elif last["ema7"] < prev["ema7"]:
-                    should_sell = True
-                    sell_reason = "손절 (EMA7 하락)"
                     should_sell = True
                     sell_reason = "손절 (EMA7 하락)"
             
