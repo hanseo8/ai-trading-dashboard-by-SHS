@@ -116,12 +116,12 @@ try:
     # CACHE BUSTING: Force Reload
     st.markdown(f"<!-- Cache Buster: {datetime.utcnow()} -->", unsafe_allow_html=True)
 
-    apply_custom_styles()
+    # apply_custom_styles()  <-- UI 디자인 일시 비활성화 (충돌 확인용)
 
     st.markdown(f"""
     <div style='text-align: center; margin-bottom: 30px;'>
-        <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-            ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v3.3 SYSTEM REBUILD</span>
+        <h1 style='color: #000; text-shadow: none;'>
+            ⚡ 서한석의 코인 자동매매 <span style='font-size:0.5em; background:#EEE; padding:5px; border-radius:5px; color:black;'>v4.0 MINIMAL TEST ({datetime.now().strftime('%H:%M:%S')})</span>
         </h1>
     </div>
     """, unsafe_allow_html=True)
