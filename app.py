@@ -430,19 +430,35 @@ pnl_amount = initial_equity - base_capital
 pnl_pct = (pnl_amount / base_capital) * 100
 
 st.divider()
-col1, col2, col3, col4, col5 = st.columns(5)
 
-with col1:
-    st.metric("실시간 수익(USDT)", f"{pnl_amount:,.2f} USDT", f"{pnl_pct:.2f}%")
-with col2:
-    # 달성률 대신 다른 정보를 보여주거나 빈 칸
-    st.metric("보유 종목 수", f"{len(pf_init['holdings'])} 개")
-with col3:
-    st.metric(f"모의투자 평가금액", f"{initial_equity:,.2f} USDT", "(실시간 변동)")
-with col4:
-    st.metric("잔액(예수금)", f"{pf_init['balance']:,.2f} USDT")
-with col5:
-    st.metric("마지막 갱신", datetime.now().strftime("%H:%M:%S"))
+# 메트릭 카드 HTML 생성
+delta_color = "delta-pos" if pnl_pct >= 0 else "delta-neg"
+pnl_icon = "▲" if pnl_pct >= 0 else "▼"
+
+st.markdown(f"""
+<div class="metric-row">
+    <div class="metric-card">
+        <div class="metric-label">실시간 수익(USDT)</div>
+        <div class="metric-value {delta_color}">{pnl_amount:,.2f}</div>
+        <div class="metric-delta {delta_color}">{pnl_icon} {pnl_pct:.2f}%</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">보유 종목</div>
+        <div class="metric-value">{len(pf_init['holdings'])} <span style="font-size:0.5em">개</span></div>
+        <div class="metric-delta" style="color:var(--cyber_blue)">실시간 감시 중</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">평가 금액</div>
+        <div class="metric-value">{initial_equity:,.0f}</div>
+        <div class="metric-label">USDT</div>
+    </div>
+    <div class="metric-card">
+        <div class="metric-label">예수금 잔액</div>
+        <div class="metric-value">{pf_init['balance']:,.0f}</div>
+        <div class="metric-label">USDT</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 st.caption(f"현재 모드: {portfolio_mode} - 타임프레임에 따라 계좌가 자동 전환됩니다.")
 st.divider()
@@ -450,12 +466,14 @@ st.divider()
 # 레이아웃 구성 (7:3)
 col_main, col_news = st.columns([0.7, 0.3])
 
-# 우측 뉴스 피드 (먼저 배치)
+# 우측 뉴스 피드 (HTML Container 로 변경)
 with col_news:
-    display_news_with_filter()
+    display_news_with_filter()  # 함수 내부도 수정 필요
 
-# 좌측 메인 차트/스캔 영역
-col_main.subheader(f"🔥 실시간 정밀 스캔 (USDT 마켓 / 거래량 상위 {top_n}개 기준)")
+# 좌측 메인 차트/스캔 영역 (Card 적용)
+with col_main:
+    st.markdown('<div class="stCard">', unsafe_allow_html=True) # 카드 시작
+    st.subheader(f"🔥 실시간 정밀 스캔 (USDT 마켓 / 거래량 상위 {top_n}개 기준)")
 
 # 기존 try-except 문을 아래처럼 수정해서 에러 내용을 확인합니다.
 try:
