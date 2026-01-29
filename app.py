@@ -426,7 +426,13 @@ with st.sidebar:
     # 1. 전략 선택 (최상위)
     strategy_mode = st.selectbox(
         "전략 선택", 
-        ["단기 스캘핑 (1m/5m)", "중장기 스윙 (1h~1d)", "고수의 기법 (Triple Confirm)", "📉 하락장 역추세 (Dip Buying)"]
+        [
+            "단기 스캘핑 (1m/5m)", 
+            "중장기 스윙 (1h~1d)", 
+            "고수의 기법 (Triple Confirm)", 
+            "📉 하락장 역추세 (Dip Buying)",
+            "🚀 상승장 불러너 (Bull Runner)"
+        ]
     )
     
     # 기본값 설정
@@ -454,6 +460,15 @@ with st.sidebar:
         portfolio_label = "역추세 (Dip Buying)"
         default_vol = 1.0 
         st.info("📉 하락장 역추세 (Dip Buying)\n• 조건: RSI < 30 (과매도) + 볼린저밴드 하단 돌파\n• 목표: 기술적 반등 (Dead Cat Bounce) 노리기\n• 주의: 하락장 전용 리스크 관리 필수")
+
+    elif strategy_mode.startswith("🚀"): # Bull Runner
+         timeframe = st.selectbox("타임프레임", ["15m", "1h"], index=0)
+         portfolio_file = "portfolio_bull.json"
+         portfolio_label = "상승장 불러너 (Bull Runner)"
+         
+         # 2. 대시보드 메인 타이틀 강조 (User Request)
+         st.markdown("<h2 style='color: #00FFA3; text-align: center;'>🏃‍♂️ BULL RUNNER ACTIVE: 1% Target Mode</h2>", unsafe_allow_html=True)
+         st.info("🚀 불러너 (Bull Runner)\n• 조건: 정배열 + BB상단 돌파 + 거래량 1.5배\n• 목표: 5,000불 운영 / TP 1.25% / SL -0.8%")
         
     elif strategy_mode.startswith("중장기"): # 스윙
         timeframe = st.selectbox("타임프레임", ["1h", "4h", "1d"], index=0)
@@ -770,6 +785,16 @@ for symbol, df in results:
     if is_dip_rsi and is_dip_bb:
          dip_signal = "💎 극단적 저점 (Strong Buy)"
 
+    # 5. 상승장 불러너 (Bull Runner)
+    # 모멘텀 돌파: 정배열 + BB상단 돌파 + 거래량 1.5배 폭발
+    is_bull_trend = (last["ema7"] > last["ema25"]) # 정배열
+    is_bull_break = (last["close"] > last["BBU_20_2.0"] if "BBU_20_2.0" in last else False) # 상단 돌파
+    is_bull_vol = (last["volume"] > last["vol_ma5"] * 1.5) # 거래량 1.5배
+    
+    bull_score = "관망"
+    if is_bull_trend and is_bull_break and is_bull_vol:
+         bull_score = "🏃‍♂️ 모멘텀 돌파 (Bull Run)"
+
     # 현재 모드에 맞는 신호 선택
     if strategy_mode.startswith("단기"):
          display_signal = st_score
@@ -777,6 +802,8 @@ for symbol, df in results:
          display_signal = lt_score
     elif strategy_mode.startswith("고수"):
          display_signal = master_signal
+    elif strategy_mode.startswith("🚀"):
+         display_signal = bull_score
     else: # 하락장
          display_signal = dip_signal
          
@@ -802,6 +829,8 @@ for symbol, df in results:
     elif "장기 보유" in display_signal: # 장기
         should_buy = True
     elif "과매도" in display_signal or "극단적" in display_signal: # 하락장
+        should_buy = True
+    elif "Bull Run" in display_signal: # 불러너
         should_buy = True
             
     # 매수 실행
