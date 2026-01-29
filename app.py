@@ -435,11 +435,14 @@ for i, symbol in enumerate(top_symbols, start=1):
                 # (옵션) 익절 없음? 혹은 매우 큰 익절(50%?)
                 # 일단 추세 꺾임만 봅니다.
                 
-            else: # 고수의 기법
-                 # 고수는 10% 룰 (또는 그 이상?) -> 기존 10% 유지
-                 if profit_pct >= 10.0:
+            else: # 고수의 기법 (실전 단타)
+                # TP: +2.5%, SL: -1.5%
+                if profit_pct >= 2.5:
                     should_sell = True
-                    sell_reason = "익절 (10%)"
+                    sell_reason = "익절 (+2.5%)"
+                elif profit_pct <= -1.5:
+                    should_sell = True
+                    sell_reason = "손절 (-1.5%)"
 
             if should_sell and not enable_lock:
                 success, msg = pt.sell_coin(symbol, cur_p, amt, filename=portfolio_file)
