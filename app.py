@@ -493,7 +493,14 @@ is_bull, btc_price, btc_ema = get_btc_trend(exchange)
 
 btc_status_text = "상승장 (매수 가능) 🚀" if is_bull else "하락장 (매수 중단) 🛡️"
 btc_color = "green" if is_bull else "red"
-col_main.markdown(f"#### BTC 추세(15m/EMA99): :{btc_color}[{btc_status_text}] ({btc_price:,.1f} vs {btc_ema:,.1f})")
+
+# Pulse Animation Class 적용
+pulse_class = "pulse-red" if not is_bull else ""
+col_main.markdown(f"""
+<div class="stCard {pulse_class}" style="padding: 10px; text-align: center; margin-bottom: 15px;">
+    <h4 style='margin:0'>BTC 추세(15m/EMA99): :{btc_color}[{btc_status_text}] ({btc_price:,.1f} vs {btc_ema:,.1f})</h4>
+</div>
+""", unsafe_allow_html=True)
 
 if not is_bull:
     col_main.warning("비트코인이 추세선(EMA99) 아래에 있어 신규 매수를 일시 중단합니다.")
