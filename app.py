@@ -8,21 +8,34 @@ from datetime import datetime
 from typing import Optional
 import time
 import math
-import requests
-from bs4 import BeautifulSoup
-import paper_trading as pt
+import textwrap
 
+# ... (Previous imports)
 
-# 페이지 설정
-st.set_page_config(page_title="서한석의 코인 자동매매", layout="wide")
+# ...
 
-# 1. 제목 (중앙 정렬 + 밑줄 장식) -> 제거 (HTML 카드로 대체 예정이므로 CSS만 주입)
-# (기존 마크다운 삭제하고 스타일 함수로 대체)
+# 1. 제목 (중앙 정렬 + 밑줄 장식)
+# CSS로 스타일링된 HTML 타이틀
+st.markdown("""
+<div style='text-align: center; margin-bottom: 30px;'>
+    <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v2.1 Fix</span>
+    </h1>
+</div>
+""", unsafe_allow_html=True)
 
-def apply_custom_styles():
-    st.markdown("""
-    <style>
-        /* 1. Root Variables & Dark Theme */
+# ...
+
+def display_news_with_filter():
+    # 뉴스 컨테이너 시작
+    # textwrap.dedent를 사용하여 공백 문제 완전 해결
+    news_html = textwrap.dedent("""
+        <div class="news-container">
+            <div style='display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;'>
+                <h4 style='margin:0; color: #FFF;'>🔔 실시간 속보</h4>
+                <span class='live-dot'>● LIVE</span>
+            </div>
+    """).strip()
         :root {
             --bg-color: #0E1117;
             --card-bg: #1E1E1E; /* 딥 차콜/블랙 */
@@ -356,22 +369,17 @@ def display_news_with_filter():
                     badge_html = "<span class='badge badge-info'>뉴스</span>"
                     title_html = f"<span style='color: #DDD;'>{title}</span>"
                 
-                # HTML 들여쓰기 제거 (매우 중요)
-                item_html = f"""<div style='margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;'>
-    <div style='font-size: 0.8em; color: #888; margin-bottom: 4px;'>{badge_html} {pubDate}</div>
-    <a href='{link}' target='_blank' style='text-decoration: none;'>{title_html}</a>
-</div>"""
+                # HTML 들여쓰기 제거 (한 줄로 작성)
+                item_html = f"<div style='margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;'><div style='font-size: 0.8em; color: #888; margin-bottom: 4px;'>{badge_html} {pubDate}</div><a href='{link}' target='_blank' style='text-decoration: none;'>{title_html}</a></div>"
                 news_html += item_html
         else:
             news_html += f"<div style='color:red'>RSS 로딩 실패 ({response.status_code})</div>"
     except Exception as e:
         news_html += f"<div style='color:red'>RSS 에러: {str(e)}</div>"
 
-    # 2. 글로벌 뉴스 (CryptoPanic Mockup)
+    # 글로벌 뉴스
     news_html += "<h5 style='margin-top: 20px; color: #BBB; border-top: 1px dashed #444; padding-top: 10px;'>🌍 Global Feed</h5>"
-    news_html += """<div style='margin-bottom: 10px;'>
-        <span class='badge badge-info'>System</span> <span style='color: #DDD;'>Monitoring Global Markets...</span>
-    </div>"""
+    news_html += "<div style='margin-bottom: 10px;'><span class='badge badge-info'>System</span> <span style='color: #DDD;'>Monitoring Global Markets...</span></div>"
     
     news_html += "</div>" # 컨테이너 종료
     st.markdown(news_html, unsafe_allow_html=True)
