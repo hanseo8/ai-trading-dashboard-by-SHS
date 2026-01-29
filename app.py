@@ -9,7 +9,7 @@ from typing import Optional
 import time
 import math
 import requests
-import feedparser
+from bs4 import BeautifulSoup
 import paper_trading as pt
 
 
@@ -170,22 +170,31 @@ def display_news_with_filter():
             response = requests.get(rss_url, headers=headers, timeout=5)
             
             if response.status_code == 200:
-                feed = feedparser.parse(response.content)
-                if not feed.entries:
+                soup = BeautifulSoup(response.content, "xml")
+                items = soup.find_all("item")
+                
+                if not items:
                      col_main.info("뉴스 피드를 불러왔으나 내용이 없습니다.")
-                for entry in feed.entries[:10]:
-                    title = entry.title
+                
+                for item in items[:10]:
+                    title = item.find("title").text
+                    link = item.find("link").text
+                    try:
+                        pubDate = item.find("pubDate").text
+                    except:
+                        pubDate = "시간 정보 없음"
+
                     # 키워드 포함 여부 확인 및 강조
                     is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
                     
                     if is_urgent:
                         # 빨간색 강조 및 경고 이모지 추가
                         st.markdown(f"🚩 :red[**{title}**]")
-                        st.info(f"👉 [뉴스 확인하기]({entry.link})")
+                        st.info(f"👉 [뉴스 확인하기]({link})")
                     else:
-                        st.markdown(f"**[{title}]({entry.link})**")
+                        st.markdown(f"**[{title}]({link})**")
                     
-                    st.caption(f"🕒 {entry.published}")
+                    st.caption(f"🕒 {pubDate}")
                     st.divider()
             else:
                 st.error(f"RSS 로딩 실패 (HTTP {response.status_code})")
