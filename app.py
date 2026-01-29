@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v7.8 DEBUG TRAP ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.0 SPEED OPTIMIZED ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -525,31 +525,35 @@ col_main.markdown(f"""
 current_prices = {}
 status_data = []
 
+# [SPEED FIX] 전역 Exchange 인스턴스 (재사용)
+# 매번 생성하면 SSL 핸드쉐이크 등으로 인해 3~5배 느려짐.
+# 순차 처리 모드이므로 전역 객체 사용이 안전함.
+safe_exchange = ccxt.binance({
+    'enableRateLimit': True,
+    'options': {
+        'defaultType': 'spot', 
+        'adjustForTimeDifference': True
+    },
+    'urls': {
+        'api': {
+            'public': 'https://data-api.binance.vision/api/v3',
+            'fapiPublic': 'https://data-api.binance.vision/api/v3',
+            'fapi': 'https://data-api.binance.vision/api/v3',
+            'dapiPublic': 'https://data-api.binance.vision/api/v3',
+            'dapi': 'https://data-api.binance.vision/api/v3',
+        }
+    },
+    'timeout': 10000 
+})
+
 # [SPEED UPDATE] Thread-Safe Fetch Function (No Streamlit Cache)
 import concurrent.futures
 import traceback
 
 def fetch_raw_data_safe(symbol, tf, limit=200):
     try:
-        # ccxt 인스턴스 생성 (Rate Limit 고려하여 타임아웃/옵션 설정)
-        local_ex = ccxt.binance({
-            'enableRateLimit': True,
-            'options': {
-                'defaultType': 'spot', 
-                'adjustForTimeDifference': True
-            },
-            'urls': {
-                'api': {
-                    'public': 'https://data-api.binance.vision/api/v3',
-                    'fapiPublic': 'https://data-api.binance.vision/api/v3',
-                    'fapi': 'https://data-api.binance.vision/api/v3',
-                    'dapiPublic': 'https://data-api.binance.vision/api/v3',
-                    'dapi': 'https://data-api.binance.vision/api/v3',
-                }
-            },
-            'timeout': 10000 
-        })
-        ohlcv = local_ex.fetch_ohlcv(symbol, timeframe=tf, limit=limit)
+        # 전역 인스턴스 재사용 (속도 향상)
+        ohlcv = safe_exchange.fetch_ohlcv(symbol, timeframe=tf, limit=limit)
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
