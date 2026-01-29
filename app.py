@@ -349,10 +349,11 @@ def display_news_with_filter():
         except Exception as e2:
              news_html += f"<div style='color:#FF0055;'>연결 오류 (All Failed): {str(e)} / {str(e2)}</div>"
 
-    news_html += textwrap.dedent("""
+    # Indent manually to ensure no confusion, or use simple string
+    news_html += """
         <h5 style='margin-top: 30px; color: #555; border-top: 1px dashed #333; padding-top: 15px; text-align:center;'>🌍 GLOBAL FEED ACTIVE</h5>
     </div>
-    """)
+    """
     st.markdown(news_html, unsafe_allow_html=True)
 
 
@@ -745,71 +746,112 @@ else:
     )
     col_main.markdown('</div>', unsafe_allow_html=True) # Scanner Card 종료
 
-# 포트폴리오 상세
-# col_main.divider() -> 카드 간격으로 대체
-col_main.markdown('<div class="stCard">', unsafe_allow_html=True) # Portfolio Card 시작
-col_main.subheader("💼 내 포트폴리오")
+# 포트폴리오 & 매매기록 통합 섹션 (Card 적용 + Tabs)
+col_main.markdown('<div class="stCard">', unsafe_allow_html=True) 
 
-# 현재가 갱신을 위해 스캔된 데이터 활용 (또는 별도 조회 필요)
-# 위 루프에서 현재가가 있다면 업데이트
-for d in status_data:
-    current_prices[d["종목"]] = d["현재가"]
+# Tabs 구성
+tab_holdings, tab_history = col_main.tabs(["💼 보유 종목 (My Wallet)", "📝 매매 기록 (Trade History)"])
 
-portfolio_updated = pt.get_portfolio_status(current_prices, filename=portfolio_file)
-
-# 2단 컬럼 대신 수직 배치로 변경
-col_main.markdown("##### 📦 보유 중인 코인")
-if not portfolio_updated["details"]:
-    col_main.info("보유 중인 코인이 없습니다.")
-else:
-    df_pf = pd.DataFrame(portfolio_updated["details"])
-    col_main.dataframe(df_pf, use_container_width=True, hide_index=True)
-
-col_main.markdown('</div>', unsafe_allow_html=True) # Portfolio Card 종료
-col_main.markdown('<div class="stCard">', unsafe_allow_html=True) # History Card 시작
-col_main.markdown("##### 📝 통합 매매 기록 (모든 전략)")
-
-# 모든 포트폴리오 파일에서 기록 취합
-all_files = {
-    "단타": "portfolio_scalping.json",
-    "장기": "portfolio_long.json",
-    "고수": "portfolio_my.json"
-}
-
-all_trades = []
-for label, fname in all_files.items():
-    pf_data = pt.load_portfolio(fname)
-    hist = pf_data.get("history", [])
-    # 출처 표기
-    for h in hist:
-        h["strategy"] = label
-        all_trades.append(h)
-
-if not all_trades:
-    col_main.info("매매 기록이 없습니다.")
-else:
-    # 최신순 정렬
-    df_trades = pd.DataFrame(all_trades)
-    # 키 이름 호환성 체크 ('time' vs 'timestamp')
-    if "time" in df_trades.columns:
-        sort_key = "time"
-    else:
-        sort_key = "timestamp" 
-        
-    df_trades = df_trades.sort_values(by=sort_key, ascending=False).head(30) # 30개로 늘림
+# [Tab 1] 보유 종목
+with tab_holdings:
+    # 현재가 갱신 (스캔 데이터 + 보유 종목 별도 조회)
+    # 위 루프에서 current_prices가 일부 채워졌겠지만, 누락된 보유 종목에 대해 추가 조회
+    curr_holdings = pt.load_portfolio(portfolio_file)["holdings"]
+    missing_symbols = [s for s in curr_holdings.keys() if s not in current_prices]
     
-    # 보기 좋게 가공
-    display_trades = []
-    for _, r in df_trades.iterrows():
-        ts_val = r.get("time", r.get("timestamp", ""))
+    if missing_symbols:
         try:
-            ts_str = datetime.strptime(ts_val, "%Y-%m-%d %H:%M:%S").strftime("%m-%d %H:%M")
+            # 한꺼번에 가져오는 것이 효율적
+            tickers = exchange.fetch_tickers(missing_symbols)
+            for s, ticker in tickers.items():
+                current_prices[s] = ticker['last']
+        except:
+             pass # 에러 무시 (기존 가격 유지)
+
+    portfolio_updated = pt.get_portfolio_status(current_prices, filename=portfolio_file)
+
+    if not portfolio_updated["details"]:
+        st.info("현재 보유 중인 코인이 없습니다. (자동 매매 대기 중)")
+    else:
+        df_pf = pd.DataFrame(portfolio_updated["details"])
+        # 스타일링: 수익률 컬럼 색상 적용
+        def color_pnl(val):
+            if "%" in val:
+                num = float(val.replace("%", ""))
+                color = '#ff4b4b' if num > 0 else '#00cc96' if num < 0 else 'white' # 업비트 컬러(빨강상승)
+                return f'color: {color}; font-weight: bold'
+            return ''
+        
+        st.dataframe(
+            df_pf.style.map(color_pnl, subset=["수익률", "수익금"]),
+            use_container_width=True, 
+            hide_index=True
+        )
+        st.caption(f"총 평가금액: {portfolio_updated['equity']:,.2f} USDT (수익금: {portfolio_updated['pnl']:,.2f})")
+
+
+# [Tab 2] 매매 기록
+with tab_history:
+    # 모든 포트폴리오 파일에서 기록 취합
+    all_files = {
+        "단타(Scalping)": "portfolio_scalping.json",
+        "장기(Swing)": "portfolio_long.json",
+        "고수(Master)": "portfolio_my.json"
+    }
+    
+    all_trades = []
+    for label, fname in all_files.items():
+        pf_data = pt.load_portfolio(fname)
+        hist = pf_data.get("history", [])
+        # 리스트가 역순일 수 있으니 확인
+        for h in hist:
+            h["전략"] = label
+            all_trades.append(h)
+            
+    if not all_trades:
+        st.info("아직 체결된 매매 기록이 없습니다.")
+    else:
+        df_trades = pd.DataFrame(all_trades)
+        
+        # 컬럼 정리 및 이름 변경
+        # 예: {'time': ..., 'type': 'buy', 'symbol': 'BTC/USDT', ...}
+        
+        # 정렬 (최신순)
+        if "time" in df_trades.columns:
+            df_trades = df_trades.sort_values(by="time", ascending=False)
+            
+        # 컬럼 매핑 (한글화)
+        # 키가 존재하는지 체크하면서 매핑
+        col_map = {
+            "time": "시간",
+            "strategy": "전략",
+            "type": "유형",
+            "symbol": "종목",
+            "price": "체결가",
+            "amount": "수량",
+            "total": "총액",
+            "pnl_pct": "수익률"
+        }
+        # 실제로 존재하는 컬럼만 선택
+        avail_cols = [c for c in col_map.keys() if c in df_trades.columns]
+        df_view = df_trades[avail_cols].rename(columns=col_map)
+        
+        # 수익률 포맷팅
+        if "수익률" in df_view.columns:
+             df_view["수익률"] = df_view["수익률"].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "-")
+        
+        # 유형 포맷팅 (BUY -> 매수 🔴, SELL -> 매도 🔵)
+        if "유형" in df_view.columns:
+             df_view["유형"] = df_view["유형"].apply(lambda x: "🔴 매수" if x == "buy" else "🔵 매도" if x == "sell" else x)
+
+        st.dataframe(df_view, use_container_width=True, hide_index=True)
+
+col_main.markdown('</div>', unsafe_allow_html=True) # Card End            ts_str = datetime.strptime(ts_val, "%Y-%m-%d %H:%M:%S").strftime("%m-%d %H:%M")
         except:
             ts_str = str(ts_val)
             
         t_type = r["type"]
         symbol = r["symbol"]
-        price = fmt_price(r["price"])
         
         # 수익률 표시
         profit_str = ""
