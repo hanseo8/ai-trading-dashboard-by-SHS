@@ -349,19 +349,25 @@ def display_news_with_filter():
         except Exception as e2:
              news_html += f"<div style='color:#FF0055;'>연결 오류 (All Failed): {str(e)} / {str(e2)}</div>"
 
-    # Indent manually to ensure no confusion, or use simple string
-    news_html += """
-        <h5 style='margin-top: 30px; color: #555; border-top: 1px dashed #333; padding-top: 15px; text-align:center;'>🌍 GLOBAL FEED ACTIVE</h5>
-    </div>
-    """
+    # [FIX] HTML Indentation Bug: Use single line or dedent properly
+    news_html += "<h5 style='margin-top: 30px; color: #555; border-top: 1px dashed #333; padding-top: 15px; text-align:center;'>🌍 GLOBAL FEED ACTIVE</h5></div>"
     st.markdown(news_html, unsafe_allow_html=True)
 
 
 # 상단 헤더
+apply_custom_styles()
+
+st.markdown(f"""
+<div style='text-align: center; margin-bottom: 30px;'>
+    <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v6.4 FINAL SPEED ({datetime.now().strftime('%H:%M')})</span>
+    </h1>
+</div>
+""", unsafe_allow_html=True)
 
 with st.sidebar:
     st.subheader("설정")
-    
+    # ... (Sidebar Config Logic Unchanged) ...
     # 1. 전략 선택 (최상위)
     strategy_mode = st.selectbox(
         "전략 선택", 
@@ -505,7 +511,6 @@ top_symbols = sorted(symbols, key=lambda x: safe_quote_volume(markets, x), rever
 
 import concurrent.futures
 
-# ... (BTC Trend Logic) ...
 # BTC 추세 확인 (안전장치)
 exchange = get_exchange()
 is_bull, btc_price, btc_ema = get_btc_trend(exchange)
@@ -528,19 +533,73 @@ if not is_bull:
 current_prices = {}
 status_data = []
 
-# [SPEED UPDATE] 병렬 처리 함수 정의
+# [SPEED UPDATE] Thread-Safe Fetch Function (No Streamlit Cache)
+def fetch_raw_data_safe(symbol, tf, limit=200):
+    """
+    Streamlit Cache를 사용하지 않는 순수 데이터 패칭 함수.
+    ThreadPoolExecutor 내부에서 실행 시 Streamlit Context 충돌을 방지함.
+    """
+    try:
+        # ccxt 인스턴스를 매번 새로 생성하여 스레드 안전성 확보 (가장 안전한 방법)
+        # 또는 전역 exchange 객체를 사용하되 binance public api는 stateless하므로 괜찮음.
+        # 여기서는 안전하게 새로 생성
+        local_ex = ccxt.binance()
+        ohlcv = local_ex.fetch_ohlcv(symbol, timeframe=tf, limit=limit)
+        df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+
+        # 지표 계산 (ta-lib)
+        df["ema7"] = ta.ema(df["close"], length=7)
+        df["ema25"] = ta.ema(df["close"], length=25)
+        df["ema99"] = ta.ema(df["close"], length=99)
+        df["rsi14"] = ta.rsi(df["close"], length=14)
+        df["wpr"] = ta.willr(df["high"], df["low"], df["close"], length=14)
+        
+        # MACD (Fix: use ta.macd returning DataFrame)
+        macd = ta.macd(df["close"])
+        df = pd.concat([df, macd], axis=1)
+
+        # BB (20, 2)
+        bb = ta.bbands(df["close"], length=20, std=2.0)
+        df = pd.concat([df, bb], axis=1)
+        
+        # Vol MA & ATR
+        df["vol_ma5"] = ta.sma(df["volume"], length=5)
+        df["vol_ma"] = ta.sma(df["volume"], length=10)
+        
+        # [스캘핑] BB Width
+        if "BBU_20_2.0" in df.columns:
+            df["bb_width"] = (df["BBU_20_2.0"] - df["BBL_20_2.0"]) / df["BBM_20_2.0"]
+        else:
+             df["bb_width"] = 0.0
+
+        if len(df) < 5: return None
+        return df
+    except:
+        return None
+
+def process_symbol_safe(symbol):
+    df = fetch_raw_data_safe(symbol, timeframe)
+    return symbol, df
+
 # 스캔 시작
-progress = col_main.progress(0, text="스캔 중…")
-results = [] # <--- FIX: Initialize list
-for i, symbol in enumerate(top_symbols, start=1):
-    df = get_data(symbol, timeframe=timeframe, limit=200)
-    if df is None:
-        progress.progress(i / len(top_symbols), text=f"스캔 중… ({i}/{len(top_symbols)})")
-        continue
+progress_text = "⚡ 초고속 스캔 중 (Parallel Safe Mode)..."
+progress_bar = col_main.progress(0, text=progress_text)
+results = []
+
+# ThreadPoolExecutor로 병렬 실행 (최대 10개 동시 요청)
+with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    # Future 생성
+    future_to_symbol = {executor.submit(process_symbol_safe, sym): sym for sym in top_symbols}
     
-    # 순차 처리 모드 (안정성 우선)
-    results.append((symbol, df))
-    progress.progress(i / len(top_symbols), text=f"스캔 중… ({i}/{len(top_symbols)})")
+    completed_count = 0
+    for future in concurrent.futures.as_completed(future_to_symbol):
+        sym, df = future.result()
+        if df is not None:
+             results.append((sym, df))
+        
+        completed_count += 1
+        progress_bar.progress(completed_count / len(top_symbols), text=f"{progress_text} ({completed_count}/{len(top_symbols)})")
 
 # 결과 처리
 for symbol, df in results:
