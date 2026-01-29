@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v7.5 SYNTAX FIX ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v7.6 STABILITY CHECK ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -526,11 +526,12 @@ current_prices = {}
 status_data = []
 
 # [SPEED UPDATE] Thread-Safe Fetch Function (No Streamlit Cache)
-# [SPEED UPDATE] Thread-Safe Fetch Function (No Streamlit Cache)
+import concurrent.futures
+import traceback
+
 def fetch_raw_data_safe(symbol, tf, limit=200):
     try:
         # ccxt 인스턴스 생성 (Rate Limit 고려하여 타임아웃/옵션 설정)
-        # [FIX] 지역 제한 우회를 위해 data-api URL 적용
         local_ex = ccxt.binance({
             'enableRateLimit': True,
             'options': {
@@ -580,7 +581,7 @@ def fetch_raw_data_safe(symbol, tf, limit=200):
         if len(df) < 5: return None, "Not enough data"
         return df, None
     except Exception as e:
-        return None, str(e)
+        return None, f"Error: {str(e)}"
 
 def process_symbol_safe(symbol):
     # Global 'timeframe' variable access
