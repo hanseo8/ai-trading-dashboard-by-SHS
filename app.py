@@ -503,6 +503,9 @@ except Exception as e:
 symbols = [s for s in markets.keys() if isinstance(s, str) and s.endswith("/USDT")]
 top_symbols = sorted(symbols, key=lambda x: safe_quote_volume(markets, x), reverse=True)[: int(top_n)]
 
+import concurrent.futures
+
+# ... (BTC Trend Logic) ...
 # BTC 추세 확인 (안전장치)
 exchange = get_exchange()
 is_bull, btc_price, btc_ema = get_btc_trend(exchange)
@@ -524,13 +527,38 @@ if not is_bull:
 
 current_prices = {}
 status_data = []
-progress = col_main.progress(0, text="스캔 중…")
-for i, symbol in enumerate(top_symbols, start=1):
-    df = get_data(symbol, timeframe=timeframe, limit=200)
-    if df is None:
-        progress.progress(i / len(top_symbols), text=f"스캔 중… ({i}/{len(top_symbols)})")
-        continue
 
+# [SPEED UPDATE] 병렬 처리 함수 정의
+def process_symbol(symbol):
+    try:
+        # 각 스레드마다 별도 인스턴스 사용 (Safety)
+        # get_data 내부에서 get_exchange()를 호출하므로 안전
+        df = get_data(symbol, timeframe=timeframe, limit=200)
+        return symbol, df
+    except Exception:
+        return symbol, None
+
+# 스캔 시작
+progress_text = "⚡ 초고속 스캔 중 (Parallel Processing)..."
+progress_bar = col_main.progress(0, text=progress_text)
+
+# ThreadPoolExecutor로 병렬 실행 (최대 10개 동시 요청)
+results = []
+with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    future_to_symbol = {executor.submit(process_symbol, sym): sym for sym in top_symbols}
+    
+    completed_count = 0
+    for future in concurrent.futures.as_completed(future_to_symbol):
+        sym, df = future.result()
+        if df is not None:
+             results.append((sym, df))
+        
+        completed_count += 1
+        progress_bar.progress(completed_count / len(top_symbols), text=f"{progress_text} ({completed_count}/{len(top_symbols)})")
+
+# 결과 처리 (순서 보장을 위해 top_symbols 순서대로 정렬하거나 그냥 처리)
+# 병렬 처리로 순서가 섞였을 수 있음 -> results를 루프 돌며 로직 수행
+for symbol, df in results:
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
