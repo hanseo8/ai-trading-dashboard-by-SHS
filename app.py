@@ -109,6 +109,19 @@ def apply_custom_styles():
         div[data-baseweb="popover"] div { background-color: #262730 !important; color: #FFF !important; }
         div[role="listbox"] li { background-color: #262730 !important; color: #FFF !important; }
 
+        /* Mobile Optimization (Max Width 768px) */
+        @media (max-width: 768px) {
+            .metric-row { flex-direction: column; gap: 10px; }
+            .metric-card { width: 100% !important; margin-bottom: 5px; padding: 10px; }
+            h1 { font-size: 1.4em !important; text-shadow: none !important; }
+            h2 { font-size: 1.1em !important; }
+            .news-container { height: 400px; margin-top: 15px; }
+            /* Force DataFrame to scroll horizontally */
+            .stDataFrame { display: block; overflow-x: auto; white-space: nowrap; }
+            /* Hide non-essential elements if needed, but scrolling is better */
+            .stCard { padding: 15px; }
+        }
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -128,7 +141,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v9.1 BULL RUNNER ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v9.2 MOBILE READY ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
