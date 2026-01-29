@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.1 BEAR MARKET HUNTER ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.2 SCALPING UPDATE ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -374,8 +374,8 @@ with st.sidebar:
         timeframe = st.selectbox("타임프레임", ["1m", "5m"], index=1)
         portfolio_file = "portfolio_scalping.json"
         portfolio_label = "단타 (Scalping)"
-        default_vol = 2.0 # 스캘핑 기본 2배
-        st.info("⚡ 스캘핑 전략 (1m/5m)\n• 조건: 횡보(Squeeze) + 정배열(EMA) + 거래량 2배\n• 익절: +1.0% / 손절: EMA7 이탈")
+        default_vol = 1.3 # 스캘핑 기본 1.3배 (완화)
+        st.info("⚡ 스캘핑 전략 (1m/5m)\n• 조건: 횡보(Squeeze) + 정배열(EMA) + 거래량 1.3배\n• 익절: +1.25% (순수익 1%) / 손절: -1.0%")
         
     elif strategy_mode.startswith("고수"): # 고수
         timeframe = st.selectbox("타임프레임", ["15m", "1h", "4h"], index=0) # 15분 기본
@@ -639,34 +639,21 @@ for symbol, df in results:
 
     # --- 전략 판별 로직 ---
 
-    # 1. 단기 전략 (Short-term / Scalping)
-    # 조건: 에너지 응축(횡보) + 정배열(EMA 7-25 GC) + 거래량 2배(5이평 대비) + RSI 50 돌파
-    
-    # 응축 여부 (BB Width가 하위 25% 수준이거나 절대값 0.05 미만 등... -> 단순화: 0.1 미만)
-    is_squeeze = (last["bb_width"] < 0.1) 
-    
-    # 정배열 여부 (단순 상태)
+    # 1. 단기 전략 (Short-term / Scalping) 수정
+    # 정배열 상태 유지 (EMA 7 > EMA 25)
     is_st_trend = (last["ema7"] > last["ema25"])
     
-    # 정배열 전환 (EMA 7 > 25)
-    is_gc = is_st_trend and (prev["ema7"] <= prev["ema25"]) # 막 크로스
-    # 또는 이미 정배열 상태에서 눌림목? User req: "정배열 전환" -> Golden Cross
+    # 거래량 조건 완화: 1.3배 (현실적인 수급 포착)
+    is_vol_pump = (last["volume"] > last["vol_ma5"] * vol_mult)
     
-    # 거래량 실린 양봉 (직전 5개 평균 대비 설정값 배)
-    # 기존 하드코딩 2.0 -> vol_mult 사용
-    is_vol_pump = (last["volume"] > last["vol_ma5"] * vol_mult) and (last["close"] > last["open"])
-    
-    # RSI 컨펌 (50 상향 돌파 or 50~60 구간 상승)
+    # RSI 컨펌: 50 이상이면 힘이 붙은 상태
     is_rsi_up = (last["rsi14"] > 50)
     
     st_score = "관망"
-    if is_gc and is_vol_pump and is_rsi_up: # 응축은 옵션으로 볼지, 필수일지. 사용자: "횡보해야 합니다"
-        # 횡보 감지는 bb_width가 낮았던 상태에서 터지는 것.
-        # prev의 bb_width가 낮았다면 OK.
-        if prev["bb_width"] < 0.15: # 조금 널널하게
-             st_score = "🚀 단기 급등 (Squeeze Break)"
-        else:
-             st_score = "🚀 단기 급등 (Volume Break)" # 횡보 아니어도 볼륨 터지면 일단 표시
+    # 'is_gc'(방금 교차) 대신 'is_st_trend'(정배열 유지)를 사용하여 진입 기회 확대
+    if is_st_trend and is_vol_pump and is_rsi_up:
+        if last["bb_width"] < 0.2: # 횡보 응축 조건도 약간 완화
+             st_score = "🚀 단기 급등 (수급 확인)"
 
     # 2. 장기 전략 (Long-term)
     # 가격이 EMA 99 위 + RSI가 50~70 사이 (안정적 상승 구간)
@@ -788,18 +775,14 @@ for symbol, df in results:
             sell_reason = ""
             
             if portfolio_mode.startswith("단타"):
-                # 익절: 1.5% 이상 (User Request)
-                if profit_pct >= 1.5:
+                # 익절: 수수료 약 0.2% 제외하고 순수익 1% 이상일 때 (1.25% 설정)
+                if profit_pct >= 1.25:
                     should_sell = True
-                    sell_reason = "익절 (1.5%)"
-                # 손절: -1.0% 이하 or EMA 7 꺾임 (User Request)
+                    sell_reason = "익절 (순수익 1% 확정)"
+                # 손절: -1.0% (수익 대비 손실 폭을 짧게 유지)
                 elif profit_pct <= -1.0:
                     should_sell = True
-                    sell_reason = "손절 (-1.0%)"
-                # (기존 로직 유지) EMA 7 꺾임
-                elif last["ema7"] < prev["ema7"]:
-                    should_sell = True
-                    sell_reason = "손절 (EMA7 하락)"
+                    sell_reason = "손절 (-1.0% 보호)"
             
             elif portfolio_mode.startswith("장기"): # 스윙 (추세 추종)
                 # 설명대로 "추세가 꺾일 때까지" 보유
