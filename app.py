@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v7.6 STABILITY CHECK ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v7.7 STABILITY RESTORE ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -583,34 +583,26 @@ def fetch_raw_data_safe(symbol, tf, limit=200):
     except Exception as e:
         return None, f"Error: {str(e)}"
 
-def process_symbol_safe(symbol):
-    # Global 'timeframe' variable access
-    df, err = fetch_raw_data_safe(symbol, timeframe)
-    return symbol, df, err
-
 # 스캔 시작 (Debug Mode Option)
 debug_mode = st.sidebar.checkbox("🔧 디버그 모드 (에러 확인)", value=False)
-max_workers = 4 # 안전하게 4개로 축소 (Rate Limit 방지)
 
-progress_text = f"⚡ 초고속 스캔 중 (Parallel: {max_workers} threads)..."
+progress_text = "⚡ 스캔 중 (Sequential Safe Mode)..."
 progress_bar = col_main.progress(0, text=progress_text)
 results = []
 errors = []
 
-# ThreadPoolExecutor로 병렬 실행
-with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-    future_to_symbol = {executor.submit(process_symbol_safe, sym): sym for sym in top_symbols}
+# [STABILITY FIX] 병렬 처리 제거 -> 순차 처리로 복귀 (안정성 최우선)
+for i, symbol in enumerate(top_symbols):
+    # Global 'timeframe' variable access
+    df, err = fetch_raw_data_safe(symbol, timeframe)
     
-    completed_count = 0
-    for future in concurrent.futures.as_completed(future_to_symbol):
-        sym, df, err = future.result()
-        if df is not None:
-             results.append((sym, df))
-        else:
-             errors.append(f"{sym}: {err}")
-        
-        completed_count += 1
-        progress_bar.progress(completed_count / len(top_symbols), text=f"{progress_text} ({completed_count}/{len(top_symbols)})")
+    if df is not None:
+         results.append((symbol, df))
+    else:
+         errors.append(f"{symbol}: {err}")
+    
+    # 진행률 업데이트
+    progress_bar.progress((i + 1) / len(top_symbols), text=f"{progress_text} ({i + 1}/{len(top_symbols)})")
 
 if debug_mode and errors:
     col_main.error(f"스캔 실패 ({len(errors)}개): {errors[:5]}...")
