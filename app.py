@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.2 SCALPING UPDATE ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.3 HIGH STAKES ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -743,8 +743,11 @@ for symbol, df in results:
             if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
                  buy_msg = "보유 중 (스킵)"
             else:
-                # 투자금 설정 (모든 기법 1000불 통일)
-                invest_money = 1000.0
+                # 투자금 설정 (단타: 3000불, 나머지: 1000불)
+                if strategy_mode.startswith("단기"):
+                    invest_money = 3000.0
+                else:
+                    invest_money = 1000.0
                 
                 # 지정가 매수 시뮬레이션 (호가 조회)
                 bid_price = get_best_bid(exchange, symbol)
