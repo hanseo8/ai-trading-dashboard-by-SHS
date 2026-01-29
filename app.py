@@ -9,6 +9,7 @@ from typing import Optional
 import time
 import math
 import requests
+import feedparser
 import paper_trading as pt
 
 
@@ -151,7 +152,7 @@ def get_best_bid(_exchange, symbol):
 URGENT_KEYWORDS = ["상장", "해킹", "유의", "폐지", "폭락", "SEC", "공격", "중단"]
 
 def display_news_with_filter():
-    st.subheader("🔔 실시간 속보 (정밀 필터링)")
+    st.subheader("🔔 실시간 속보")
     
     # 긴급 정지 버튼 (뉴스창 바로 위 배치)
     if st.button("🚨 EMERGENCY STOP (모든 매매 즉시 중단)", use_container_width=True):
