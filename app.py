@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v7.1 HEADER FIX ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v7.2 DEBUG MODE ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -526,28 +526,27 @@ current_prices = {}
 status_data = []
 
 # [SPEED UPDATE] Thread-Safe Fetch Function (No Streamlit Cache)
+# [SPEED UPDATE] Thread-Safe Fetch Function (No Streamlit Cache)
 def fetch_raw_data_safe(symbol, tf, limit=200):
-    """
-    Streamlit Cache를 사용하지 않는 순수 데이터 패칭 함수.
-    ThreadPoolExecutor 내부에서 실행 시 Streamlit Context 충돌을 방지함.
-    """
     try:
-        # ccxt 인스턴스를 매번 새로 생성하여 스레드 안전성 확보 (가장 안전한 방법)
-        # 또는 전역 exchange 객체를 사용하되 binance public api는 stateless하므로 괜찮음.
-        # 여기서는 안전하게 새로 생성
-        local_ex = ccxt.binance()
+        # ccxt 인스턴스 생성 (Rate Limit 고려하여 타임아웃/옵션 설정)
+        local_ex = ccxt.binance({
+            'enableRateLimit': True,
+            'options': {'defaultType': 'spot', 'adjustForTimeDifference': True},
+            'timeout': 10000 
+        })
         ohlcv = local_ex.fetch_ohlcv(symbol, timeframe=tf, limit=limit)
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
-        # 지표 계산 (ta-lib)
+        # 지표 계산
         df["ema7"] = ta.ema(df["close"], length=7)
         df["ema25"] = ta.ema(df["close"], length=25)
         df["ema99"] = ta.ema(df["close"], length=99)
         df["rsi14"] = ta.rsi(df["close"], length=14)
         df["wpr"] = ta.willr(df["high"], df["low"], df["close"], length=14)
         
-        # MACD (Fix: use ta.macd returning DataFrame)
+        # MACD
         macd = ta.macd(df["close"])
         df = pd.concat([df, macd], axis=1)
 
@@ -559,39 +558,48 @@ def fetch_raw_data_safe(symbol, tf, limit=200):
         df["vol_ma5"] = ta.sma(df["volume"], length=5)
         df["vol_ma"] = ta.sma(df["volume"], length=10)
         
-        # [스캘핑] BB Width
+        # BB Width
         if "BBU_20_2.0" in df.columns:
             df["bb_width"] = (df["BBU_20_2.0"] - df["BBL_20_2.0"]) / df["BBM_20_2.0"]
         else:
              df["bb_width"] = 0.0
 
-        if len(df) < 5: return None
-        return df
-    except:
-        return None
+        if len(df) < 5: return None, "Not enough data"
+        return df, None
+    except Exception as e:
+        return None, str(e)
 
 def process_symbol_safe(symbol):
-    df = fetch_raw_data_safe(symbol, timeframe)
-    return symbol, df
+    # Global 'timeframe' variable access
+    df, err = fetch_raw_data_safe(symbol, timeframe)
+    return symbol, df, err
 
-# 스캔 시작
-progress_text = "⚡ 초고속 스캔 중 (Parallel Safe Mode)..."
+# 스캔 시작 (Debug Mode Option)
+debug_mode = st.sidebar.checkbox("🔧 디버그 모드 (에러 확인)", value=False)
+max_workers = 4 # 안전하게 4개로 축소 (Rate Limit 방지)
+
+progress_text = f"⚡ 초고속 스캔 중 (Parallel: {max_workers} threads)..."
 progress_bar = col_main.progress(0, text=progress_text)
 results = []
+errors = []
 
-# ThreadPoolExecutor로 병렬 실행 (최대 10개 동시 요청)
-with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-    # Future 생성
+# ThreadPoolExecutor로 병렬 실행
+with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
     future_to_symbol = {executor.submit(process_symbol_safe, sym): sym for sym in top_symbols}
     
     completed_count = 0
     for future in concurrent.futures.as_completed(future_to_symbol):
-        sym, df = future.result()
+        sym, df, err = future.result()
         if df is not None:
              results.append((sym, df))
+        else:
+             errors.append(f"{sym}: {err}")
         
         completed_count += 1
         progress_bar.progress(completed_count / len(top_symbols), text=f"{progress_text} ({completed_count}/{len(top_symbols)})")
+
+if debug_mode and errors:
+    col_main.error(f"스캔 실패 ({len(errors)}개): {errors[:5]}...")
 
 # 결과 처리
 for symbol, df in results:
