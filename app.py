@@ -353,6 +353,69 @@ def display_news_with_filter():
     news_html += "<h5 style='margin-top: 30px; color: #555; border-top: 1px dashed #333; padding-top: 15px; text-align:center;'>🌍 GLOBAL FEED ACTIVE</h5></div>"
     st.markdown(news_html, unsafe_allow_html=True)
 
+# --- 전략별 요약표 생성 함수 ---
+def display_strategy_summary():
+    """모든 전략의 성적을 취합하여 요약표를 생성합니다."""
+    # st.markdown("<div class='stCard'>", unsafe_allow_html=True) # 중복 카드 방지
+    st.subheader("📊 전략별 통합 성적표 (Multi-Strategy Summary)")
+    
+    # 전략 이름과 파일 매핑 (고수 전략: portfolio_master.json 사용)
+    strategy_map = {
+        "단기 스캘핑": "portfolio_scalping.json",
+        "중장기 스윙": "portfolio_long.json",
+        "고수의 기법": "portfolio_master.json", 
+        "하락장 역추세": "portfolio_dip.json"
+    }
+    
+    summary_list = []
+    total_equity_all = 0
+    base_capital_per_strategy = 50000.0 # 각 전략당 시작 자금
+    
+    for name, fname in strategy_map.items():
+        # 파일 로드
+        pf = pt.load_portfolio(fname)
+        balance = pf.get("balance", base_capital_per_strategy)
+        
+        # 현재 평가 금액 계산 (보유 종목 포함)
+        holdings_value = 0
+        for symbol, info in pf.get("holdings", {}).items():
+            # cached_prices에 값이 있으면 실시간가, 없으면 평단가 사용
+            current_p = cached_prices.get(symbol, info["avg_price"])
+            holdings_value += info["amount"] * current_p
+            
+        equity = balance + holdings_value
+        pnl = equity - base_capital_per_strategy
+        pnl_pct = (pnl / base_capital_per_strategy) * 100
+        
+        total_equity_all += equity
+        
+        summary_list.append({
+            "전략 모드": name,
+            "평가 금액 (USDT)": f"{equity:,.2f}",
+            "누적 수익금": f"{pnl:,.2f}",
+            "수익률": f"{pnl_pct:+.2f}%"
+        })
+    
+    # 데이터프레임 변환 및 출력
+    df_summary = pd.DataFrame(summary_list)
+    
+    # 스타일 적용: 수익률 색상 구분 (pandas styler 활용)
+    # Streamlit dataframe은 색상 지정이 제한적이므로 단순히 표시하거나 HTML 변환 고려
+    # 여기서는 st.table 대신 st.dataframe 사용 권장 (가독성)
+    st.dataframe(df_summary, use_container_width=True, hide_index=True)
+    
+    # 전체 통합 자산 표시
+    total_pnl_all = total_equity_all - (base_capital_per_strategy * 4)
+    color_hex = "#FF0055" if total_pnl_all >= 0 else "#00FFA3"
+    
+    st.markdown(f"""
+    <div style='text-align: right; padding: 10px; font-size: 1.1em; background: rgba(255,255,255,0.05); border-radius: 10px; margin-top: 10px;'>
+        전체 통합 자산: <span style='color: #FFF; font-weight: bold;'>{total_equity_all:,.2f} USDT</span> 
+        (합계 수익: <span style='color: {color_hex}; font-weight: bold;'>{total_pnl_all:,.2f}</span>)
+    </div>
+    """, unsafe_allow_html=True)
+    # st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
@@ -487,6 +550,10 @@ st.markdown(f"""
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+
+# [UI UPDATE] 전략별 요약표 출력
+display_strategy_summary()
 
 st.caption(f"현재 모드: {portfolio_mode} - 타임프레임에 따라 계좌가 자동 전환됩니다.")
 st.divider()
