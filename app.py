@@ -12,11 +12,12 @@ import textwrap
 import requests
 from bs4 import BeautifulSoup
 import feedparser
+import paper_trading as pt  # <--- CRITICAL FIX
 
 # 페이지 설정
 st.set_page_config(page_title="서한석의 코인 자동매매", layout="wide")
 
-st.error(f"DEPLOYMENT CHECK: v3.0 - Current Time: {datetime.utcnow()}")
+# (Removed old v3.0 Error Banner)
 
 def apply_custom_styles():
     st.markdown("""
