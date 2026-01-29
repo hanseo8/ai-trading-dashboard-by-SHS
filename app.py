@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v6.0 SPEED BOOST ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v6.2 QUICK FIX ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -531,6 +531,7 @@ status_data = []
 # [SPEED UPDATE] 병렬 처리 함수 정의
 # 스캔 시작
 progress = col_main.progress(0, text="스캔 중…")
+results = [] # <--- FIX: Initialize list
 for i, symbol in enumerate(top_symbols, start=1):
     df = get_data(symbol, timeframe=timeframe, limit=200)
     if df is None:
