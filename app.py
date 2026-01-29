@@ -846,34 +846,7 @@ with tab_history:
 
         st.dataframe(df_view, use_container_width=True, hide_index=True)
 
-col_main.markdown('</div>', unsafe_allow_html=True) # Card End            ts_str = datetime.strptime(ts_val, "%Y-%m-%d %H:%M:%S").strftime("%m-%d %H:%M")
-        except:
-            ts_str = str(ts_val)
-            
-        t_type = r["type"]
-        symbol = r["symbol"]
-        
-        # 수익률 표시
-        profit_str = ""
-        if "pnl_pct" in r and r["pnl_pct"] is not None:
-                profit_str = f"({r['pnl_pct']:.2f}%)"
-        
-        # 구분(Color) 아이콘
-        icon = "🔵" if "buy" in t_type else "🔴"
-        if "익절" in t_type: icon = "🟢"
-        
-        display_trades.append({
-            "전략": r.get("strategy", "-"), # 전략 구분 추가
-            "시간": ts_str,
-            "구분": f"{icon} {t_type}",
-            "종목": symbol,
-            "가격": price,
-            "수익률": profit_str
-        })
-        
-    col_main.dataframe(pd.DataFrame(display_trades), use_container_width=True, hide_index=True)
-
-col_main.markdown('</div>', unsafe_allow_html=True) # History Card 종료
+col_main.markdown('</div>', unsafe_allow_html=True) # Card End
 
 with st.sidebar:
     if not enable_lock:
