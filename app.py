@@ -9,6 +9,9 @@ from typing import Optional
 import time
 import math
 import textwrap
+import requests
+from bs4 import BeautifulSoup
+import feedparser
 
 # 페이지 설정
 st.set_page_config(page_title="서한석의 코인 자동매매", layout="wide")
@@ -53,6 +56,12 @@ def apply_custom_styles():
         .news-container::-webkit-scrollbar-track { background: #111; }
         .news-container::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
         .news-container::-webkit-scrollbar-thumb:hover { background: #666; }
+        
+        /* New Glassmorphism Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #111; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #666; }
         
         .metric-row { display: flex; gap: 15px; justify-content: space-between; margin-bottom: 20px; }
         .metric-card {
@@ -120,7 +129,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v4.1 RESTORE ({datetime.now().strftime('%H:%M:%S')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v5.0 PRO UPDATE ({datetime.now().strftime('%H:%M:%S')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -181,7 +190,7 @@ def get_data(symbol: str, timeframe: str = "1h", limit: int = 200) -> Optional[p
         
         # [스캘핑 업그레이드] 
         # 1. 밴드폭 (Squeeze 감지용): (Upper - Lower) / Middle
-        # ta.bbands 결과 컬럼명 확인 필요. 보통 BBU_*, BBL_*, BBM_*
+        # ta.bbands 결과 컬럼명 확인 필요. 보통 BBU_*, BBL_*, BBM_*, BBM_20_2.0
         # bb 변수 사용 (20, 2)
         if "BBU_20_2.0" in df.columns and "BBL_20_2.0" in df.columns and "BBM_20_2.0" in df.columns:
             df["bb_width"] = (df["BBU_20_2.0"] - df["BBL_20_2.0"]) / df["BBM_20_2.0"]
@@ -253,56 +262,98 @@ def get_best_bid(_exchange, symbol):
 URGENT_KEYWORDS = ["상장", "해킹", "유의", "폐지", "폭락", "SEC", "공격", "중단"]
 
 def display_news_with_filter():
-    # 뉴스 컨테이너 시작 (Indentation Free)
-    news_html = '<div class="news-container">'
-    news_html += '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">'
-    news_html += '<h4 style="margin:0; color: #FFF;">🔔 실시간 속보</h4><span class="live-dot">● LIVE</span></div>'
+    # 1. 뉴스 컨테이너 시작 (Glassmorphism 스타일 - Indentation Safe using dedent)
+    news_html = textwrap.dedent("""
+    <div style='background: linear-gradient(145deg, #1e1e1e, #16181c); 
+                padding: 20px; border-radius: 15px; border: 1px solid #333; 
+                height: 750px; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.5);'>
+        <div style='display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;'>
+            <h3 style='margin:0; color: #00FFA3; font-size: 1.2em;'>📡 LIVE TERMINAL</h3>
+            <span style='color: #FF0055; font-size: 0.8em; font-weight: bold; animation: blink 1.5s infinite;'>● LIVE</span>
+        </div>
+    """)
     
-    # 1. 국내 뉴스 (RSS)
+    # 2. 데이터 가져오기 (RSS 활용 - Feedparser 요청 반영)
     rss_url = "https://kr.investing.com/rss/news_25.rss"
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        response = requests.get(rss_url, headers=headers, timeout=5)
+        # Feedparser 사용 (User Recommendation)
+        feed = feedparser.parse(rss_url)
         
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, "html.parser") # lxml 제거
-            items = soup.find_all("item")
+        if not feed.entries:
+             # Fallback to requests if feedparser returns empty (common in some envs)
+             raise Exception("Feedparser returned no entries, trying Requests fallback.")
+        
+        for entry in feed.entries[:20]:
+            title = entry.title
+            link = entry.link
             
-            for item in items[:20]:
-                title = item.find("title").text.strip()
-                link = item.find("link").text.strip()
-                
-                # Date Processing
-                pubDate = ""
-                p_tag = item.find("pubDate") or item.find("pubdate")
-                if p_tag:
-                    # ex: Mon, 29 Jan 2026 14:30:00 GMT
-                    pubDate = p_tag.text[17:22]
-                
-                is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
-                
-                badge_html = "<span class='badge badge-info'>뉴스</span>"
-                title_style = "color: #DDD;"
-                
-                if is_urgent:
-                    badge_html = "<span class='badge badge-danger'>긴급</span>"
-                    title_style = "color: #FF0055; font-weight: bold;"
-                
-                # Single Line HTML Construction
-                news_html += f'<div style="margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;">'
-                news_html += f'<div style="font-size: 0.8em; color: #888; margin-bottom: 4px;">{badge_html} {pubDate}</div>'
-                news_html += f'<a href="{link}" target="_blank" style="text-decoration: none;"><span style="{title_style}">{title}</span></a>'
-                news_html += '</div>'
-        else:
-            news_html += f'<div style="color:red">RSS 로딩 실패 ({response.status_code})</div>'
-    except Exception as e:
-        news_html += f'<div style="color:red">RSS 에러: {str(e)}</div>'
+            # 시간 추출 (published가 있으면 사용, 없으면 N/A)
+            pubDate = "N/A"
+            if hasattr(entry, 'published') and len(entry.published) > 20:
+                 pubDate = entry.published[17:22] # HH:MM
+            
+            # 긴급 키워드 강조
+            is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
+            
+            badge_class = "badge-danger" if is_urgent else "badge-info"
+            badge_text = "긴급" if is_urgent else "뉴스"
+            title_color = "#FF0055" if is_urgent else "#E0E0E0"
+            font_weight = "bold" if is_urgent else "normal"
 
-    # Global News
-    news_html += '<h5 style="margin-top: 20px; color: #BBB; border-top: 1px dashed #444; padding-top: 10px;">🌍 Global Feed</h5>'
-    news_html += '<div style="margin-bottom: 10px;"><span class="badge badge-info">System</span> <span style="color: #DDD;">Monitoring Global Markets...</span></div>'
-    
-    news_html += '</div>' # End container
+            news_html += textwrap.dedent(f"""
+            <div style='margin-bottom: 16px; border-bottom: 1px solid #2a2a2a; padding-bottom: 10px;'>
+                <div style='display: flex; align-items: center; gap: 8px; margin-bottom: 6px;'>
+                    <span class='badge {badge_class}' style='font-size: 0.7em;'>{badge_text}</span>
+                    <span style='font-size: 0.8em; color: #666;'>{pubDate}</span>
+                </div>
+                <a href='{link}' target='_blank' style='text-decoration: none;'>
+                    <span style='color: {title_color}; font-weight: {font_weight}; line-height: 1.4;'>{title}</span>
+                </a>
+            </div>
+            """)
+
+    except Exception as e:
+        # Fallback to BeautifulSoup if Feedparser fails (Safety Net)
+        try:
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            response = requests.get(rss_url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content, "html.parser")
+                items = soup.find_all("item")
+                for item in items[:20]:
+                    title = item.find("title").text.strip()
+                    link = item.find("link").text.strip()
+                    # Date
+                    pubDate = ""
+                    p_tag = item.find("pubDate") or item.find("pubdate")
+                    if p_tag: pubDate = p_tag.text[17:22]
+                    
+                    is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
+                    badge_class = "badge-danger" if is_urgent else "badge-info"
+                    badge_text = "긴급" if is_urgent else "뉴스"
+                    title_color = "#FF0055" if is_urgent else "#E0E0E0" 
+                    font_weight = "bold" if is_urgent else "normal"
+                    
+                    news_html += f"""
+                    <div style='margin-bottom: 16px; border-bottom: 1px solid #2a2a2a; padding-bottom: 10px;'>
+                        <div style='display: flex; align-items: center; gap: 8px; margin-bottom: 6px;'>
+                            <span class='badge {badge_class}' style='font-size: 0.7em;'>{badge_text}</span>
+                            <span style='font-size: 0.8em; color: #666;'>{pubDate}</span>
+                        </div>
+                        <a href='{link}' target='_blank' style='text-decoration: none;'>
+                            <span style='color: {title_color}; font-weight: {font_weight}; line-height: 1.4;'>{title}</span>
+                        </a>
+                    </div>
+                    """
+            else:
+                 news_html += f"<div style='color:#FF0055;'>연결 오류 (Fallback): {str(e)} / HTTP {response.status_code}</div>"
+        except Exception as e2:
+             news_html += f"<div style='color:#FF0055;'>연결 오류 (All Failed): {str(e)} / {str(e2)}</div>"
+
+    news_html += textwrap.dedent("""
+        <h5 style='margin-top: 30px; color: #555; border-top: 1px dashed #333; padding-top: 15px; text-align:center;'>🌍 GLOBAL FEED ACTIVE</h5>
+    </div>
+    """)
     st.markdown(news_html, unsafe_allow_html=True)
 
 
