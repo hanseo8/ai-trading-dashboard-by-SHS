@@ -1,8 +1,8 @@
-streamlit==1.41.1
-ccxt==4.2.98
-pandas==2.3.2
-pandas-ta==0.4.71b0
-plotly==5.24.1
-requests==2.32.3
-beautifulsoup4==4.12.3
-# Fixed duplicates for v3.1 Check
+streamlit
+ccxt
+pandas
+pandas-ta
+plotly
+requests
+beautifulsoup4
+# Relaxed versions for v3.3 Rebuild

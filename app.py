@@ -121,7 +121,7 @@ try:
     st.markdown(f"""
     <div style='text-align: center; margin-bottom: 30px;'>
         <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-            ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v3.2 FINAL</span>
+            ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v3.3 SYSTEM REBUILD</span>
         </h1>
     </div>
     """, unsafe_allow_html=True)
