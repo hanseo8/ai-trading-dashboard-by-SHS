@@ -281,64 +281,65 @@ def get_best_bid(_exchange, symbol):
 URGENT_KEYWORDS = ["상장", "해킹", "유의", "폐지", "폭락", "SEC", "공격", "중단"]
 
 def display_news_with_filter():
-    st.subheader("🔔 실시간 속보")
+    # 뉴스 컨테이너 시작
+    news_html = """
+    <div class="news-container">
+        <div style='display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;'>
+            <h4 style='margin:0; color: #FFF;'>🔔 실시간 속보</h4>
+            <span class='live-dot'>● LIVE</span>
+        </div>
+    """
     
-    # 긴급 정지 버튼 (뉴스창 바로 위 배치)
-    if st.button("🚨 EMERGENCY STOP (모든 매매 즉시 중단)", use_container_width=True):
-        st.error("모든 자동매매 프로세스가 강제 종료되었습니다.")
-        st.stop()
-
-    tab1, tab2 = st.tabs(["국내(CoinNess/RSS)", "글로벌(CryptoPanic)"])
-
-    with tab1:
-        st.caption("제공: 코인니스/인베스팅 (1분 이내 타전)")
-        rss_url = "https://kr.investing.com/rss/news_25.rss"
-        try:
-            # User-Agent 추가로 차단 우회
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
-            response = requests.get(rss_url, headers=headers, timeout=5)
+    # 1. 국내 뉴스 (RSS)
+    rss_url = "https://kr.investing.com/rss/news_25.rss"
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+        response = requests.get(rss_url, headers=headers, timeout=5)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, "html.parser")
+            items = soup.find_all("item")
             
-            if response.status_code == 200:
-                # lxml 의존성 제거를 위해 html.parser 사용 (태그가 소문자로 변환됨 주의)
-                soup = BeautifulSoup(response.content, "html.parser")
-                items = soup.find_all("item")
-                
-                if not items:
-                     col_main.info("뉴스 피드를 불러왔으나 내용이 없습니다.")
-                
-                for item in items[:10]:
-                    title = item.find("title").text
-                    link = item.find("link").text
-                    try:
-                        # html.parser는 태그를 소문자로 처리함
-                        pubDate = item.find("pubdate").text
-                    except:
-                        pubDate = "시간 정보 없음"
+            for item in items[:15]: # 15개로 증가
+                title = item.find("title").text
+                link = item.find("link").text
+                try:
+                    pubDate = item.find("pubdate").text[17:22] # 시간만 추출 (예: 14:30)
+                except:
+                    pubDate = ""
 
-                    # 키워드 포함 여부 확인 및 강조
-                    is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
-                    
-                    if is_urgent:
-                        # 빨간색 강조 및 경고 이모지 추가
-                        st.markdown(f"🚩 :red[**{title}**]")
-                        st.info(f"👉 [뉴스 확인하기]({link})")
-                    else:
-                        st.markdown(f"**[{title}]({link})**")
-                    
-                    st.caption(f"🕒 {pubDate}")
-                    st.divider()
-            else:
-                st.error(f"RSS 로딩 실패 (HTTP {response.status_code})")
-        except Exception as e:
-            st.error(f"RSS 에러: {str(e)}")
+                is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
+                
+                badge_html = ""
+                if is_urgent:
+                    badge_html = "<span class='badge badge-danger'>긴급</span>"
+                    title_html = f"<span style='color: var(--neon-red); font-weight: bold;'>{title}</span>"
+                else:
+                    badge_html = "<span class='badge badge-info'>뉴스</span>"
+                    title_html = f"<span style='color: #DDD;'>{title}</span>"
+                
+                news_html += f"""
+                <div style='margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;'>
+                    <div style='font-size: 0.8em; color: #888; margin-bottom: 4px;'>{badge_html} {pubDate}</div>
+                    <a href='{link}' target='_blank' style='text-decoration: none;'>{title_html}</a>
+                </div>
+                """
+        else:
+            news_html += f"<div style='color:red'>RSS 로딩 실패 ({response.status_code})</div>"
+    except Exception as e:
+        news_html += f"<div style='color:red'>RSS 에러: {str(e)}</div>"
 
-    with tab2:
-        st.caption("제공: CryptoPanic Global")
-        # 2026-01-29 글로벌 주요 이슈 예시 (Mockup for simplicity as user provided)
-        st.markdown("- [Global] BTC maintains stability above $90,000")
-        st.markdown("- [Alert] :red[**Exchange Hacking Rumors under investigation**]")
-        st.divider()
-        st.markdown("[CryptoPanic 바로가기](https://cryptopanic.com/)")
+    # 2. 글로벌 뉴스 (CryptoPanic Mockup)
+    news_html += "<h5 style='margin-top: 20px; color: #BBB; border-top: 1px dashed #444; padding-top: 10px;'>🌍 Global Feed</h5>"
+    news_html += """
+    <div style='margin-bottom: 10px;'>
+        <span class='badge badge-info'>System</span> <span style='color: #DDD;'>Monitoring Global Markets...</span>
+    </div>
+    """
+    
+    news_html += "</div>" # 컨테이너 종료
+    st.markdown(news_html, unsafe_allow_html=True)
+
 
 # 상단 헤더
 
