@@ -195,7 +195,20 @@ with st.sidebar:
     st.divider()
     st.subheader("자동 갱신")
     auto_refresh = st.checkbox("자동 새로고침 켜기", value=True)
-    refresh_sec = st.slider("갱신 주기(초)", 5, 60, 5)
+    
+    # 전략별 추천 갱신 주기 설정
+    if strategy_mode.startswith("단기"):
+        rec_refresh = 10
+        rec_msg = "추천: 10~15초 (API 안전 및 대응 충분)"
+    elif strategy_mode.startswith("중장기"):
+        rec_refresh = 60
+        rec_msg = "추천: 60~120초 (긴 호흡, API 효율)"
+    else: # 고수의 기법
+        rec_refresh = 20
+        rec_msg = "추천: 20~30초 (진중한 신호 확인)"
+
+    refresh_sec = st.slider("갱신 주기(초)", 5, 120, rec_refresh, key=f"refresh_{strategy_mode}")
+    st.caption(f"💡 {rec_msg}")
     
     st.divider()
     enable_lock = st.checkbox("🔒 포트폴리오 잠금 (초기화 방지)", value=False)
