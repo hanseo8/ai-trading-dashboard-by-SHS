@@ -164,25 +164,32 @@ def display_news_with_filter():
         st.caption("제공: 코인니스/인베스팅 (1분 이내 타전)")
         rss_url = "https://kr.investing.com/rss/news_25.rss"
         try:
-            feed = feedparser.parse(rss_url)
-            if not feed.entries:
-                 st.info("뉴스 피드를 불러올 수 없습니다.")
-            for entry in feed.entries[:10]:
-                title = entry.title
-                # 키워드 포함 여부 확인 및 강조
-                is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
-                
-                if is_urgent:
-                    # 빨간색 강조 및 경고 이모지 추가
-                    st.markdown(f"🚩 :red[**{title}**]")
-                    st.info(f"👉 [뉴스 확인하기]({entry.link})")
-                else:
-                    st.markdown(f"**[{title}]({entry.link})**")
-                
-                st.caption(f"🕒 {entry.published}")
-                st.divider()
-        except:
-            st.error("RSS 로딩 실패")
+            # User-Agent 추가로 차단 우회
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+            response = requests.get(rss_url, headers=headers, timeout=5)
+            
+            if response.status_code == 200:
+                feed = feedparser.parse(response.content)
+                if not feed.entries:
+                     col_main.info("뉴스 피드를 불러왔으나 내용이 없습니다.")
+                for entry in feed.entries[:10]:
+                    title = entry.title
+                    # 키워드 포함 여부 확인 및 강조
+                    is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
+                    
+                    if is_urgent:
+                        # 빨간색 강조 및 경고 이모지 추가
+                        st.markdown(f"🚩 :red[**{title}**]")
+                        st.info(f"👉 [뉴스 확인하기]({entry.link})")
+                    else:
+                        st.markdown(f"**[{title}]({entry.link})**")
+                    
+                    st.caption(f"🕒 {entry.published}")
+                    st.divider()
+            else:
+                st.error(f"RSS 로딩 실패 (HTTP {response.status_code})")
+        except Exception as e:
+            st.error(f"RSS 에러: {str(e)}")
 
     with tab2:
         st.caption("제공: CryptoPanic Global")
