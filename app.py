@@ -170,7 +170,8 @@ def display_news_with_filter():
             response = requests.get(rss_url, headers=headers, timeout=5)
             
             if response.status_code == 200:
-                soup = BeautifulSoup(response.content, "xml")
+                # lxml 의존성 제거를 위해 html.parser 사용 (태그가 소문자로 변환됨 주의)
+                soup = BeautifulSoup(response.content, "html.parser")
                 items = soup.find_all("item")
                 
                 if not items:
@@ -180,7 +181,8 @@ def display_news_with_filter():
                     title = item.find("title").text
                     link = item.find("link").text
                     try:
-                        pubDate = item.find("pubDate").text
+                        # html.parser는 태그를 소문자로 처리함
+                        pubDate = item.find("pubdate").text
                     except:
                         pubDate = "시간 정보 없음"
 
