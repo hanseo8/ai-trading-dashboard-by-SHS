@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.5 TREND MASTER ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.6 QUICK FIX ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -529,6 +529,11 @@ import concurrent.futures
 # """, unsafe_allow_html=True)
 # if not is_bull:
 #     col_main.warning("비트코인이 추세선(EMA99) 아래에 있어 신규 매수를 일시 중단합니다.")
+
+# User Request: Remove Banner (Logic Commented Out)
+# exchange = get_exchange()
+# ...
+exchange = safe_exchange # [FIX] NameError 방지용 별칭 (기존 로직 호환)
 
 current_prices = {}
 status_data = []
