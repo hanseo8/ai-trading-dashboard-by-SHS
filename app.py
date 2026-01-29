@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.0 SPEED OPTIMIZED ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.1 BEAR MARKET HUNTER ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -362,7 +362,7 @@ with st.sidebar:
     # 1. 전략 선택 (최상위)
     strategy_mode = st.selectbox(
         "전략 선택", 
-        ["단기 스캘핑 (1m/5m)", "중장기 스윙 (1h~1d)", "고수의 기법 (Triple Confirm)"]
+        ["단기 스캘핑 (1m/5m)", "중장기 스윙 (1h~1d)", "고수의 기법 (Triple Confirm)", "📉 하락장 역추세 (Dip Buying)"]
     )
     
     # 기본값 설정
@@ -376,6 +376,20 @@ with st.sidebar:
         portfolio_label = "단타 (Scalping)"
         default_vol = 2.0 # 스캘핑 기본 2배
         st.info("⚡ 스캘핑 전략 (1m/5m)\n• 조건: 횡보(Squeeze) + 정배열(EMA) + 거래량 2배\n• 익절: +1.0% / 손절: EMA7 이탈")
+        
+    elif strategy_mode.startswith("고수"): # 고수
+        timeframe = st.selectbox("타임프레임", ["15m", "1h", "4h"], index=0) # 15분 기본
+        portfolio_file = "portfolio_master.json"
+        portfolio_label = "고수 (Master)"
+        default_wpr = -80
+        st.info("🔥 고수의 기법 (15m+)\n• 조건: WPR 과매도 탈출 + 거래량 폭발 + 정배열\n• 익절: +3~5% / 손절: -3%")
+        
+    elif strategy_mode.startswith("하락장"): # 하락장 역추세
+        timeframe = st.selectbox("타임프레임", ["15m", "1h"], index=0)
+        portfolio_file = "portfolio_dip.json"
+        portfolio_label = "역추세 (Dip Buying)"
+        default_vol = 1.0 
+        st.info("📉 하락장 역추세 (Dip Buying)\n• 조건: RSI < 30 (과매도) + 볼린저밴드 하단 돌파\n• 목표: 기술적 반등 (Dead Cat Bounce) 노리기\n• 주의: 하락장 전용 리스크 관리 필수")
         
     elif strategy_mode.startswith("중장기"): # 스윙
         timeframe = st.selectbox("타임프레임", ["1h", "4h", "1d"], index=0)
@@ -687,13 +701,26 @@ for symbol, df in results:
     elif is_master_trend and is_master_rsi and is_master_vol and is_master_wpr:
         master_signal = "⚡ 추세 돌파 (추격매수)"
 
+    # 4. 하락장 역추세 (Dip Buying)
+    # 조건: RSI < 30 (심각한 과매도) + 가격 < BB 하단 (패닉 셀링)
+    is_dip_rsi = last["rsi14"] < 30
+    is_dip_bb = last["close"] < (last["BBL_20_2.0"] if "BBL_20_2.0" in last else 0)
+    
+    dip_signal = "관망"
+    if is_dip_rsi:
+         dip_signal = "🌊 과매도 진입 (RSI<30)"
+    if is_dip_rsi and is_dip_bb:
+         dip_signal = "💎 극단적 저점 (Strong Buy)"
+
     # 현재 모드에 맞는 신호 선택
     if strategy_mode.startswith("단기"):
          display_signal = st_score
     elif strategy_mode.startswith("중장기"):
          display_signal = lt_score
-    else: # 고수
+    elif strategy_mode.startswith("고수"):
          display_signal = master_signal
+    else: # 하락장
+         display_signal = dip_signal
          
     # 3. 데이터프레임에 추가
     status_data.append({
@@ -715,6 +742,8 @@ for symbol, df in results:
     elif "강력매수" in display_signal or "추격매수" in display_signal: # 고수
         should_buy = True
     elif "장기 보유" in display_signal: # 장기
+        should_buy = True
+    elif "과매도" in display_signal or "극단적" in display_signal: # 하락장
         should_buy = True
             
     # 매수 실행
