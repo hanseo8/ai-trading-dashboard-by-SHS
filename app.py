@@ -16,10 +16,139 @@ import paper_trading as pt
 # 페이지 설정
 st.set_page_config(page_title="서한석의 코인 자동매매", layout="wide")
 
-# 1. 제목 (중앙 정렬 + 밑줄 장식)
+# 1. 제목 (중앙 정렬 + 밑줄 장식) -> 제거 (HTML 카드로 대체 예정이므로 CSS만 주입)
+# (기존 마크다운 삭제하고 스타일 함수로 대체)
+
+def apply_custom_styles():
+    st.markdown("""
+    <style>
+        /* 1. Root Variables & Dark Theme */
+        :root {
+            --bg-color: #0E1117;
+            --card-bg: #1E1E1E; /* 딥 차콜/블랙 */
+            --text-color: #E0E0E0;
+            --neon-green: #00FFA3;
+            --neon-red: #FF0055;
+            --cyber_blue: #00D2FF;
+            --border-radius: 12px;
+        }
+        
+        /* 2. Main Container Background */
+        .stApp {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+        
+        /* 3. Card Components (Shadow & Round) */
+        .stCard {
+            background-color: var(--card-bg);
+            padding: 20px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
+            border: 1px solid #333;
+        }
+        
+        /* 4. News Feed Container (Independent Scroll) */
+        .news-container {
+            background-color: #16181C; /* 더 어두운 배경 */
+            padding: 15px;
+            border-radius: var(--border-radius);
+            height: 600px; /* 고정 높이 */
+            overflow-y: auto; /* 독립 스크롤 */
+            border-left: 2px solid #333;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+        }
+        
+        /* Scrollbar Customization */
+        .news-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .news-container::-webkit-scrollbar-track {
+            background: #111; 
+        }
+        .news-container::-webkit-scrollbar-thumb {
+            background: #444; 
+            border-radius: 4px;
+        }
+        .news-container::-webkit-scrollbar-thumb:hover {
+            background: #666; 
+        }
+        
+        /* 5. Metric Cards (Flexbox) */
+        .metric-row {
+            display: flex;
+            gap: 15px;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .metric-card {
+            background-color: var(--card-bg);
+            flex: 1;
+            padding: 15px;
+            border-radius: var(--border-radius);
+            text-align: center;
+            border: 1px solid #333;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .metric-label {
+            font-size: 0.9em;
+            color: #888;
+            margin-bottom: 5px;
+        }
+        .metric-value {
+            font-size: 1.6em;
+            font-weight: bold;
+            color: #FFF;
+        }
+        .metric-delta {
+            font-size: 0.9em;
+        }
+        .delta-pos { color: var(--neon-green); }
+        .delta-neg { color: var(--neon-red); }
+        
+        /* 6. Pulse Animation (Red Alert) */
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 0, 85, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 85, 0); }
+        }
+        .pulse-red {
+            animation: pulse-red 2s infinite;
+            border: 1px solid var(--neon-red) !important;
+        }
+        
+        /* 7. Live Feed Header Pulse */
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+        .live-dot {
+            color: red;
+            animation: blink 1.5s infinite;
+        }
+        
+        /* 8. Badge Styles */
+        .badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-right: 5px;
+        }
+        .badge-danger { background-color: rgba(255, 0, 85, 0.2); color: var(--neon-red); border: 1px solid var(--neon-red); }
+        .badge-info { background-color: rgba(0, 210, 255, 0.2); color: var(--cyber_blue); border: 1px solid var(--cyber_blue); }
+
+    </style>
+    """, unsafe_allow_html=True)
+
+apply_custom_styles()
+
+# 타이틀 (커스텀 HTML)
 st.markdown("""
-<div style='text-align: center;'>
-    <h1 style='display: inline-block; border-bottom: 3px solid #FF4B4B; padding-bottom: 10px;'>서한석의 코인 자동매매 실시간 상황판</h1>
+<div style='text-align: center; margin-bottom: 30px;'>
+    <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span></h1>
 </div>
 """, unsafe_allow_html=True)
 
