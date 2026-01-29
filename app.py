@@ -370,15 +370,27 @@ for i, symbol in enumerate(top_symbols, start=1):
             
     # 매수 실행
     if should_buy:
-        # 중복 매수 방지
-        curr_pf = pt.load_portfolio(portfolio_file)
-        if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
-             buy_msg = "보유 중 (스킵)"
+        if not is_bull:
+            buy_msg = "BTC 하락장 (스킵)"
         else:
-            # 투자금 설정 (모든 기법 1000불 통일)
-            invest_money = 1000.0
+            # 중복 매수 방지
+            curr_pf = pt.load_portfolio(portfolio_file)
+            if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
+                 buy_msg = "보유 중 (스킵)"
+            else:
+                # 투자금 설정 (모든 기법 1000불 통일)
+                invest_money = 1000.0
+                
+                # 지정가 매수 시뮬레이션 (호가 조회)
+                bid_price = get_best_bid(exchange, symbol)
+                entry_price = bid_price if bid_price else float(last["close"])
 
-            success, msg = pt.buy_coin(symbol, float(last["close"]), invest_amount=invest_money, filename=portfolio_file)
+                success, msg = pt.buy_coin(symbol, entry_price, invest_amount=invest_money, filename=portfolio_file)
+                if success:
+                    buy_msg = "매수 체결 완료"
+                    st.toast(f"✅ {symbol} 매수 완료! ({entry_price})")
+                else:
+                    buy_msg = f"매수 실패: {msg}"
 
     # [매도 로직 업데이트]
     # 스캘핑: TP 1.0%, SL (EMA 7 꺾임)
