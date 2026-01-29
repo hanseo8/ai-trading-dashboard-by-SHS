@@ -119,8 +119,6 @@ apply_custom_styles()
 # -----------------------------------------------------------------------------
 # [DEBUG] Canary: Import Check
 # -----------------------------------------------------------------------------
-st.write(f"SYSTEM STATUS: Booting... v3.2 (Time: {datetime.now()})")
-
 # CACHE BUSTING: Force Reload
 st.markdown(f"<!-- Cache Buster: {datetime.utcnow()} -->", unsafe_allow_html=True)
 
