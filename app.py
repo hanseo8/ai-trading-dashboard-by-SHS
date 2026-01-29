@@ -360,7 +360,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v6.6 FINAL STABILITY ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v7.0 UNRESTRICTED ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -526,8 +526,9 @@ col_main.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-if not is_bull:
-    col_main.warning("비트코인이 추세선(EMA99) 아래에 있어 신규 매수를 일시 중단합니다.")
+# (BTC Trend Warning Disabled)
+# if not is_bull:
+#     col_main.warning("비트코인이 추세선(EMA99) 아래에 있어 신규 매수를 일시 중단합니다.")
 
 
 current_prices = {}
@@ -702,8 +703,8 @@ for symbol, df in results:
             
     # 매수 실행
     if should_buy:
-        if not is_bull:
-            buy_msg = "BTC 하락장 (스킵)"
+        if False: # Forced Enable (Disabled BTC Filter)
+            buy_msg = "BTC 하락장 (스필)"
         else:
             # 중복 매수 방지
             curr_pf = pt.load_portfolio(portfolio_file)
