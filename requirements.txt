@@ -5,4 +5,4 @@ pandas-ta
 plotly
 requests
 beautifulsoup4
-# Relaxed versions for v3.3 Rebuild
+feedparser
