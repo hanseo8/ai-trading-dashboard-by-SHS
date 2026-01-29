@@ -140,25 +140,37 @@ def apply_custom_styles():
         .badge-danger { background-color: rgba(255, 0, 85, 0.2); color: var(--neon-red); border: 1px solid var(--neon-red); }
         .badge-info { background-color: rgba(0, 210, 255, 0.2); color: var(--cyber_blue); border: 1px solid var(--cyber_blue); }
 
-        /* 9. Sidebar & Input Visibility Fix */
+        /* 9. Sidebar & Input Visibility Fix (Aggressive) */
         [data-testid="stSidebar"] {
-            background-color: #16181C !important; /* 사이드바 강제 다크 */
+            background-color: #16181C !important;
         }
-        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
-            color: #E0E0E0 !important; /* 텍스트 밝게 */
+        [data-testid="stSidebar"] * {
+            color: #E0E0E0 !important; /* 모든 요소 강제 적용 */
         }
-        .stMarkdown, .stText, p {
+        /* 예외: 활성화된 버튼/인풋 등은 허용 */
+        [data-testid="stSidebar"] button {
+             color: white !important;
+        }
+        
+        /* 10. Global Text Fix */
+        .stMarkdown, .stText, p, h1, h2, h3, h4, h5, h6 {
             color: #E0E0E0 !important;
         }
-        /* 입력 위젯 (Selectbox, Slider) 텍스트 가시성 확보 */
-        .stSelectbox div[data-baseweb="select"] > div {
+        
+        /* 11. Selectbox & Slider Customization */
+        div[data-baseweb="select"] > div {
+            background-color: #262730 !important;
+            color: #FFF !important;
+            border-color: #444 !important;
+        }
+        div[data-baseweb="popover"] div {
             background-color: #262730 !important;
             color: #FFF !important;
         }
-        .stSlider div[data-baseweb="slider"] {
-            /* 슬라이더 트랙 색상 등 */
+        div[role="listbox"] li {
+            background-color: #262730 !important;
+            color: #FFF !important;
         }
-        .st-cj { color: #FFF !important; } /* 체크박스 등 텍스트 */
 
     </style>
     """, unsafe_allow_html=True)
@@ -324,7 +336,15 @@ def display_news_with_filter():
                 title = item.find("title").text
                 link = item.find("link").text
                 try:
-                    pubDate = item.find("pubdate").text[17:22] # 시간만 추출 (예: 14:30)
+                    # XML 태그 대소문자 문제 대응 (pubDate vs pubdate)
+                    p_text = item.find("pubdate")
+                    if not p_text:
+                        p_text = item.find("pubDate")
+                    
+                    if p_text:
+                        pubDate = p_text.text[17:22]
+                    else:
+                        pubDate = ""
                 except:
                     pubDate = ""
 
