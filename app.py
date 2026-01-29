@@ -13,6 +13,8 @@ import textwrap
 # 페이지 설정
 st.set_page_config(page_title="서한석의 코인 자동매매", layout="wide")
 
+st.error(f"DEPLOYMENT CHECK: v3.0 - Current Time: {datetime.utcnow()}")
+
 def apply_custom_styles():
     st.markdown("""
     <style>
@@ -252,7 +254,7 @@ def display_news_with_filter():
         response = requests.get(rss_url, headers=headers, timeout=5)
         
         if response.status_code == 200:
-            soup = BeautifulSoup(response.content, "xml") # XML 파서 사용 권장
+            soup = BeautifulSoup(response.content, "html.parser") # lxml 제거
             items = soup.find_all("item")
             
             for item in items[:20]:
