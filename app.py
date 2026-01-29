@@ -121,6 +121,32 @@ def safe_quote_volume(markets: dict, symbol: str) -> float:
         return 0.0
 
 
+@st.cache_data(ttl=60)
+def get_btc_trend(_exchange):
+    """비트코인 15분봉 EMA99 확인 (상승장 여부 판단)"""
+    try:
+        ohlcv = _exchange.fetch_ohlcv("BTC/USDT", timeframe="15m", limit=120)
+        df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df["close"] = pd.to_numeric(df["close"])
+        df["ema99"] = ta.ema(df["close"], length=99)
+        
+        last_close = float(df["close"].iloc[-1])
+        last_ema = float(df["ema99"].iloc[-1])
+        
+        is_bullish = last_close > last_ema
+        return is_bullish, last_close, last_ema
+    except Exception as e:
+        print(f"BTC Trend Error: {e}")
+        return True, 0, 0 # 에러 시 보수적으로 통과
+
+def get_best_bid(_exchange, symbol):
+    """최적 매수 호가 (Orderbook Top Bid) 조회"""
+    try:
+        orderbook = _exchange.fetch_order_book(symbol)
+        return orderbook["bids"][0][0]
+    except:
+        return None
+
 # 상단 헤더
 
 with st.sidebar:
@@ -225,6 +251,17 @@ except Exception as e:
 
 symbols = [s for s in markets.keys() if isinstance(s, str) and s.endswith("/USDT")]
 top_symbols = sorted(symbols, key=lambda x: safe_quote_volume(markets, x), reverse=True)[: int(top_n)]
+
+# BTC 추세 확인 (안전장치)
+exchange = get_exchange()
+is_bull, btc_price, btc_ema = get_btc_trend(exchange)
+
+btc_status_text = "상승장 (매수 가능) 🚀" if is_bull else "하락장 (매수 중단) 🛡️"
+btc_color = "green" if is_bull else "red"
+st.markdown(f"#### BTC 추세(15m/EMA99): :{btc_color}[{btc_status_text}] ({btc_price:,.1f} vs {btc_ema:,.1f})")
+
+if not is_bull:
+    st.warning("비트코인이 추세선(EMA99) 아래에 있어 신규 매수를 일시 중단합니다.")
 
 
 current_prices = {}
@@ -361,11 +398,16 @@ for i, symbol in enumerate(top_symbols, start=1):
             sell_reason = ""
             
             if portfolio_mode.startswith("단타"):
-                # 익절: 1.0% 이상
-                if profit_pct >= 1.0:
+                # 익절: 1.5% 이상 (User Request)
+                if profit_pct >= 1.5:
                     should_sell = True
-                    sell_reason = "익절 (1.0%)"
-                # 손절: EMA 7 꺾임 (현재 EMA 7 < 이전 EMA 7)
+                    sell_reason = "익절 (1.5%)"
+                # 손절: -1.0% 이하 or EMA 7 꺾임 (User Request)
+                elif profit_pct <= -1.0:
+                    should_sell = True
+                    sell_reason = "손절 (-1.0%)"
+                # (기존 로직 유지) EMA 7 꺾임
+                elif last["ema7"] < prev["ema7"]:
                 # 단, 너무 잦은 손절 방지 위해 진입 후 약간의 마진? 
                 # 사용자 요청: "EMA 7선이 꺾일 때 즉시 실행"
                 elif last["ema7"] < prev["ema7"]:
