@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v9.0 STRATEGY DASHBOARD ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v9.1 BULL RUNNER ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -364,7 +364,8 @@ def display_strategy_summary():
         "단기 스캘핑": "portfolio_scalping.json",
         "중장기 스윙": "portfolio_long.json",
         "고수의 기법": "portfolio_master.json", 
-        "하락장 역추세": "portfolio_dip.json"
+        "하락장 역추세": "portfolio_dip.json",
+        "상승장 불러너": "portfolio_bull.json"
     }
     
     summary_list = []
@@ -813,9 +814,11 @@ for symbol, df in results:
             if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
                  buy_msg = "보유 중 (스킵)"
             else:
-                # 투자금 설정 (단타: 3000불, 나머지: 1000불)
+                # 투자금 설정 (단타: 3000불, 불러너: 5000불, 나머지: 1000불)
                 if strategy_mode.startswith("단기"):
                     invest_money = 3000.0
+                elif strategy_mode.startswith("🚀"): # Bull Runner
+                    invest_money = 5000.0
                 else:
                     invest_money = 1000.0
                 
