@@ -128,7 +128,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.4 CLEAN UI ({datetime.now().strftime('%H:%M')})</span>
+        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v8.5 TREND MASTER ({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -646,8 +646,11 @@ for symbol, df in results:
     st_score = "관망"
     # 'is_gc'(방금 교차) 대신 'is_st_trend'(정배열 유지)를 사용하여 진입 기회 확대
     if is_st_trend and is_vol_pump and is_rsi_up:
-        if last["bb_width"] < 0.2: # 횡보 응축 조건도 약간 완화
-             st_score = "🚀 단기 급등 (수급 확인)"
+        # BB Width가 좁으면(0.15 미만) 응축 후 발산 초기, 넓으면 이미 추세 진행 중
+        if last["bb_width"] < 0.15:
+             st_score = "🚀 단기 급등 (Squeeze Start)"
+        else:
+             st_score = "🚀 단기 급등 (Trend Riding)"
 
     # 2. 장기 전략 (Long-term)
     # 가격이 EMA 99 위 + RSI가 50~70 사이 (안정적 상승 구간)
