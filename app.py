@@ -667,6 +667,10 @@ def fetch_raw_data_safe(symbol, tf, limit=200):
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
+        # [FIX] Ensure numeric columns are floats
+        cols = ["open", "high", "low", "close", "volume"]
+        df[cols] = df[cols].astype(float)
+
         # 지표 계산
         df["ema7"] = ta.ema(df["close"], length=7)
         df["ema25"] = ta.ema(df["close"], length=25)
@@ -737,7 +741,12 @@ for symbol, df in results:
 
     # 1. 단기 전략 (Short-term / Scalping) 수정
     # 정배열 상태 유지 (EMA 7 > EMA 25)
-    is_st_trend = (last["ema7"] > last["ema25"])
+    is_st_trend = False
+    if pd.notnull(last.get("ema7")) and pd.notnull(last.get("ema25")):
+        try:
+            is_st_trend = bool(last["ema7"] > last["ema25"])
+        except Exception:
+            is_st_trend = False
     
     # 거래량 조건 완화: 1.3배 (현실적인 수급 포착)
     is_vol_pump = (last["volume"] > last["vol_ma5"] * vol_mult)
@@ -756,7 +765,21 @@ for symbol, df in results:
 
     # 2. 장기 전략 (Long-term)
     # 가격이 EMA 99 위 + RSI가 50~70 사이 (안정적 상승 구간)
-    is_lt_trend = bool(last["close"] > last["ema99"])
+    # [FIX] EMA99가 NaN일 경우 비교 시 TypeError 발생 방지
+    # [FIX] Robust comparison to prevent TypeError
+    is_lt_trend = False
+    
+    # Check if keys exist and values are valid
+    if pd.notnull(last.get("ema99")) and pd.notnull(last.get("close")):
+        try:
+             # Direct comparison
+             is_lt_trend = bool(last["close"] > last["ema99"])
+        except (TypeError, ValueError):
+             try:
+                 # Explicit float conversion as fallback
+                 is_lt_trend = bool(float(last["close"]) > float(last["ema99"]))
+             except Exception:
+                 is_lt_trend = False
     is_lt_rsi = bool(50 < last["rsi14"] < 70) if "rsi14" in last else False
     
     lt_score = "💎 장기 보유" if (is_lt_trend and is_lt_rsi) else "비중 축소"
@@ -765,10 +788,20 @@ for symbol, df in results:
 
     # 1. 조건 정의
     # 장기 추세(Filter): 가격이 EMA 99(장기 이평선) 위에 있어 전체적인 흐름이 상승장일 것. -> BTC로 1차 필터했으므로 개별 종목은 정배열 체크
-    is_master_trend = last["close"] > last["ema99"]
+    is_master_trend = False
+    if pd.notnull(last.get("ema99")) and pd.notnull(last.get("close")):
+        try:
+             is_master_trend = bool(last["close"] > last["ema99"])
+        except Exception:
+             is_master_trend = False
     
     # "정배열" (EMA7 > EMA25) 추가 (New Requirement)
-    is_master_align = last["ema7"] > last["ema25"]
+    is_master_align = False
+    if pd.notnull(last.get("ema7")) and pd.notnull(last.get("ema25")):
+        try:
+            is_master_align = bool(last["ema7"] > last["ema25"])
+        except Exception:
+            is_master_align = False
     
     # WPR -80 탈출 (Trigger): 설정값 wpr_level 활용
     is_master_wpr = prev["wpr"] < wpr_level and last["wpr"] > wpr_level
@@ -800,7 +833,12 @@ for symbol, df in results:
 
     # 5. 상승장 불러너 (Bull Runner)
     # 모멘텀 돌파: 정배열 + BB상단 돌파 + 거래량 1.5배 폭발
-    is_bull_trend = (last["ema7"] > last["ema25"]) # 정배열
+    is_bull_trend = False
+    if pd.notnull(last.get("ema7")) and pd.notnull(last.get("ema25")):
+        try:
+            is_bull_trend = bool(last["ema7"] > last["ema25"]) # 정배열
+        except Exception:
+            is_bull_trend = False
     is_bull_break = (last["close"] > last["BBU_20_2.0"] if "BBU_20_2.0" in last else False) # 상단 돌파
     is_bull_vol = (last["volume"] > last["vol_ma5"] * 1.5) # 거래량 1.5배
     
