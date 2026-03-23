@@ -67,6 +67,115 @@ def test_binance_api_connection(
         return False, f"연동 실패: {e}", None
 
 
+def get_private_exchange(
+    api_key: str,
+    api_secret: str,
+    market_type: str,
+    use_testnet: bool = False,
+) -> ccxt.Exchange:
+    """실거래/계정조회용 인증 거래소 인스턴스."""
+    ex = ccxt.binance(
+        {
+            "apiKey": (api_key or "").strip(),
+            "secret": (api_secret or "").strip(),
+            "enableRateLimit": True,
+            "options": {
+                "defaultType": "future" if market_type == "future" else "spot",
+                "adjustForTimeDifference": True,
+            },
+            "timeout": 30000,
+        }
+    )
+    if use_testnet:
+        ex.set_sandbox_mode(True)
+    return ex
+
+
+@st.cache_data(ttl=300)
+def load_tradeable_symbols(market_type: str) -> list[str]:
+    """검색용 심볼 목록 (USDT 마켓만)."""
+    ex = get_exchange(market_type)
+    ex.load_markets()
+    markets = ex.markets or {}
+    if market_type == "future":
+        return sorted(
+            [
+                s
+                for s, m in markets.items()
+                if isinstance(s, str)
+                and s.endswith(":USDT")
+                and bool(m.get("active", True))
+            ]
+        )
+    return sorted(
+        [
+            s
+            for s, m in markets.items()
+            if isinstance(s, str)
+            and s.endswith("/USDT")
+            and ":" not in s
+            and bool(m.get("active", True))
+        ]
+    )
+
+
+def place_live_market_buy(
+    symbol: str,
+    usdt_amount: float,
+    market_type: str,
+    api_key: str,
+    api_secret: str,
+    leverage: float = 1.0,
+    use_testnet: bool = False,
+) -> tuple[bool, str]:
+    """실거래 시장가 매수 (현물/선물)."""
+    try:
+        ex = get_private_exchange(api_key, api_secret, market_type, use_testnet=use_testnet)
+        ex.load_markets()
+        ticker = ex.fetch_ticker(symbol)
+        last_price = float(ticker.get("last") or ticker.get("close") or 0.0)
+        if last_price <= 0:
+            return False, "현재가 조회 실패"
+
+        if market_type == "future":
+            lev = max(1, int(float(leverage or 1)))
+            try:
+                ex.set_leverage(lev, symbol)
+            except Exception:
+                pass
+            notional = float(usdt_amount) * float(lev)
+            raw_amount = notional / last_price
+        else:
+            raw_amount = float(usdt_amount) / last_price
+
+        amount = float(ex.amount_to_precision(symbol, raw_amount))
+        if amount <= 0:
+            return False, "주문 수량이 최소 수량보다 작습니다."
+
+        order = ex.create_order(symbol, "market", "buy", amount)
+        order_id = order.get("id", "-")
+        avg_px = order.get("average")
+        filled = order.get("filled")
+        return True, f"실주문 완료 · id={order_id} · 체결수량={filled} · 평균가={avg_px}"
+    except Exception as e:
+        return False, f"실주문 실패: {e}"
+
+
+def is_region_restricted_error(exc: Exception | str) -> bool:
+    """바이낸스 지역 제한(주로 451) 에러 감지."""
+    s = str(exc).lower()
+    return ("451" in s) or ("restricted location" in s) or ("service unavailable from a restricted location" in s)
+
+
+def user_friendly_exchange_error(exc: Exception | str, market_type: str) -> str:
+    if is_region_restricted_error(exc) and market_type == "future":
+        return (
+            "선물 API 지역 제한(451)으로 연결이 차단되었습니다. "
+            "네트워크/VPN 변경 또는 현물 모드로 전환해 주세요."
+        )
+    return str(exc)
+
+
 # 페이지 설정
 st.set_page_config(page_title="펜세오의 자동매매 대시보드", layout="wide")
 
@@ -270,6 +379,17 @@ def apply_custom_styles():
             font-weight: 500;
             letter-spacing: 0.02em;
         }
+        .top-mode-strip {
+            margin: 0.1rem 0 0.6rem 0;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 210, 255, 0.25);
+            background: linear-gradient(90deg, rgba(0,210,255,0.08), rgba(26,29,35,0.9));
+            color: #d1d5db !important;
+            font-size: 0.86rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+        }
         section[data-testid="stMain"] h2,
         section[data-testid="stMain"] h3,
         div[data-testid="stHeadingContainer"] h2,
@@ -394,10 +514,14 @@ st.markdown(f"<!-- Cache Buster: {datetime.now(timezone.utc)} -->", unsafe_allow
 apply_custom_styles()
 
 # ---------------------------------------------------------------------------
-# 연습모드 / 실제모드 (노란 강조 느낌의 모드 바)
+# 최상단: 운용모드 + 거래마켓 (한 줄 선택 바)
 # ---------------------------------------------------------------------------
-_em_row = st.columns([0.06, 0.88, 0.06])
-with _em_row[1]:
+st.markdown(
+    '<div class="top-mode-strip">빠른 선택 · 운용 모드와 거래 마켓을 한 번에 설정하세요</div>',
+    unsafe_allow_html=True,
+)
+_ctl_cols = st.columns([1, 1], gap="large")
+with _ctl_cols[0]:
     _exec_label = st.radio(
         "운용 모드",
         ["연습모드 (모의)", "실제모드 (API)"],
@@ -408,9 +532,23 @@ with _em_row[1]:
             "실제모드: 바이낸스 API 키로 계정 연동(잔고 조회). 실거래 주문은 별도 옵션으로 제한합니다."
         ),
     )
+with _ctl_cols[1]:
+    _mt_label = st.radio(
+        "거래 마켓",
+        ["현물 (Spot)", "선물 (USDT-M)"],
+        horizontal=True,
+        key="app_market_type_radio",
+        help=(
+            "**현물**: 공개 시세(data-api.binance.vision) 우회, 지연 가능. "
+            "**선물**: USDT 무기한 — 심볼은 `BTC/USDT:USDT` 형식. 일부 지역에서 API(451) 차단될 수 있습니다."
+        ),
+    )
+
 is_real_mode = _exec_label.startswith("실제")
 execution_mode: str = "real" if is_real_mode else "practice"
 st.session_state["execution_mode"] = execution_mode
+market_type: str = "spot" if _mt_label.startswith("현물") else "future"
+st.session_state["market_type"] = market_type
 
 if is_real_mode:
     st.markdown(
@@ -446,24 +584,6 @@ else:
 """,
         unsafe_allow_html=True,
     )
-
-# ---------------------------------------------------------------------------
-# 최상단: 현물 / 선물(USDT-M) — 시세·스캔·차트·모의매매 심볼 형식과 연동
-# ---------------------------------------------------------------------------
-_mkt_row = st.columns([0.12, 0.76, 0.12])
-with _mkt_row[1]:
-    _mt_label = st.radio(
-        "거래 마켓",
-        ["현물 (Spot)", "선물 (USDT-M)"],
-        horizontal=True,
-        key="app_market_type_radio",
-        help=(
-            "**현물**: 공개 시세(data-api.binance.vision) 우회, 지연 가능. "
-            "**선물**: USDT 무기한 — 심볼은 `BTC/USDT:USDT` 형식. 일부 지역에서 API(451) 차단될 수 있습니다."
-        ),
-    )
-market_type: str = "spot" if _mt_label.startswith("현물") else "future"
-st.session_state["market_type"] = market_type
 
 # 실제모드: API 설정 패널 (마켓 유형에 맞춰 테스트)
 if is_real_mode:
@@ -1066,6 +1186,106 @@ with st.sidebar:
     top_n = st.slider("거래량 상위 종목 수", min_value=5, max_value=50, value=20, step=5)
     st.caption("데이터는 바이낸스 공개 시세(지연/누락 가능).")
 
+    st.divider()
+    st.subheader("검색 매수")
+    symbol_query = st.text_input(
+        "코인 검색",
+        value=st.session_state.get("manual_symbol_query", ""),
+        key="manual_symbol_query",
+        placeholder="예: BTC, ETH, SOL",
+    )
+    try:
+        search_universe = load_tradeable_symbols(market_type)
+    except Exception as e:
+        search_universe = []
+        st.error(f"심볼 목록 조회 실패: {user_friendly_exchange_error(e, market_type)}")
+
+    q = (symbol_query or "").strip().upper()
+    if q:
+        matched_symbols = [s for s in search_universe if q in s.replace("/", "").replace(":", "")]
+    else:
+        matched_symbols = search_universe[:40]
+    matched_symbols = matched_symbols[:80]
+
+    if not matched_symbols:
+        st.caption("검색 결과가 없습니다.")
+        selected_symbol = None
+    else:
+        selected_symbol = st.selectbox("매수 종목", matched_symbols, key="manual_symbol_select")
+
+    manual_usdt = st.number_input(
+        "주문 금액 (USDT)",
+        min_value=10.0,
+        max_value=50000.0,
+        value=100.0,
+        step=10.0,
+        key="manual_buy_usdt",
+    )
+    manual_target = st.radio(
+        "주문 대상",
+        ["모의 매수", "실거래 매수"],
+        horizontal=True,
+        key="manual_buy_target",
+    )
+    if manual_target == "실거래 매수":
+        st.caption("실거래는 실제모드 + API 연동 + 실거래 허용 + 아래 확인 2개가 모두 필요합니다.")
+        confirm_1 = st.checkbox("위험을 이해했고 실주문을 진행합니다.", key="manual_live_confirm_1")
+        confirm_2 = st.checkbox("심볼/금액/마켓을 확인했습니다.", key="manual_live_confirm_2")
+    else:
+        confirm_1, confirm_2 = False, False
+
+    if st.button("🛒 검색 종목 매수", key="manual_buy_btn", use_container_width=True):
+        if not selected_symbol:
+            st.error("매수할 종목을 선택하세요.")
+        else:
+            try:
+                ex_for_px = get_exchange(market_type)
+                tk = ex_for_px.fetch_ticker(selected_symbol)
+                px = float(tk.get("last") or tk.get("close") or 0.0)
+                if px <= 0:
+                    st.error("현재가 조회 실패로 주문을 중단했습니다.")
+                elif manual_target == "모의 매수":
+                    ok, msg = pt.buy_coin(
+                        selected_symbol,
+                        px,
+                        invest_amount=float(manual_usdt),
+                        filename=portfolio_file,
+                        leverage=float(futures_leverage),
+                        futures_mode=(market_type == "future"),
+                    )
+                    if ok:
+                        st.success(f"모의 매수 완료: {selected_symbol} @ {fmt_price(px)}")
+                    else:
+                        st.error(f"모의 매수 실패: {msg}")
+                else:
+                    if execution_mode != "real":
+                        st.error("실거래 매수는 실제모드에서만 가능합니다.")
+                    elif not st.session_state.get("binance_api_ok"):
+                        st.error("API 연동 테스트를 먼저 완료하세요.")
+                    elif not st.session_state.get("live_trading_enabled", False):
+                        st.error("상단 API 패널의 '실거래 주문 허용'을 먼저 켜세요.")
+                    elif not (confirm_1 and confirm_2):
+                        st.error("실거래 확인 체크 2개를 모두 켜야 주문됩니다.")
+                    else:
+                        _ak = st.session_state.get("binance_api_key", "")
+                        _sk = st.session_state.get("binance_api_secret", "")
+                        _testnet = bool(st.session_state.get("bin_use_testnet", False))
+                        ok, msg = place_live_market_buy(
+                            symbol=selected_symbol,
+                            usdt_amount=float(manual_usdt),
+                            market_type=market_type,
+                            api_key=_ak,
+                            api_secret=_sk,
+                            leverage=float(futures_leverage),
+                            use_testnet=_testnet,
+                        )
+                        if ok:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
+            except Exception as e:
+                st.error(f"주문 처리 중 오류: {user_friendly_exchange_error(e, market_type)}")
+
     if st.button("🚀 급등 전조 스캔", key="scan_breakout_btn_sidebar", use_container_width=True):
         raw_syms = (
             SIDEBAR_BREAKOUT_SCAN_SYMBOLS_FUTURE
@@ -1321,10 +1541,11 @@ with col_main:
 try:
     markets = fetch_tickers(market_type)
 except Exception as e:
-    col_main.error(f"바이낸스 연결 실패: {str(e)}") # 어떤 에러인지 정확히 보여줍니다.
-    col_main.info(
-        "💡 팁: VPN/네트워크를 바꿔 보세요. **선물** 선택 시 일부 지역에서 API(451) 차단될 수 있습니다 — **현물**로 전환해 보세요."
-    )
+    col_main.error(f"바이낸스 연결 실패: {user_friendly_exchange_error(e, market_type)}")
+    if is_region_restricted_error(e) and market_type == "future":
+        col_main.info("💡 현재 네트워크에서 선물 API(USDT-M)가 차단된 상태입니다. 상단 마켓을 **현물**로 바꾸면 스캔은 계속 가능합니다.")
+    else:
+        col_main.info("💡 네트워크 상태를 확인하고 잠시 후 다시 시도해 주세요.")
     st.stop()
 
 if market_type == "spot":
