@@ -556,6 +556,7 @@ st.session_state["market_type"] = market_type
 
 # 작은 캡션으로 각 섹션이 무엇인지 즉시 인지되게 처리
 st.caption("운용모드 / 거래마켓을 위에서 한 번에 전환하세요.", help="선물 API가 451로 차단되면 현물로 전환하면 스캔이 계속됩니다.")
+st.caption("빌드: f71b9f8 (UI 확인용)")
 
 if is_real_mode:
     st.markdown(
