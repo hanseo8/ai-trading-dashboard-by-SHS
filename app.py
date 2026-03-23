@@ -68,7 +68,7 @@ def test_binance_api_connection(
 
 
 # 페이지 설정
-st.set_page_config(page_title="급등 전조 탐지 대시보드", layout="wide")
+st.set_page_config(page_title="펜세오의 자동매매 대시보드", layout="wide")
 
 # (Removed old v3.0 Error Banner)
 
@@ -246,8 +246,8 @@ def apply_custom_styles():
         /* 메인 히어로 타이틀 · 섹션 리듬 */
         .page-hero {
             text-align: center;
-            margin-bottom: var(--section-gap);
-            padding-bottom: 1.15rem;
+            margin: 0 0 var(--section-gap) 0;
+            padding: 0.35rem 0 1.15rem 0;
             border-bottom: 1px solid var(--border-subtle);
         }
         .page-hero-title {
@@ -370,7 +370,20 @@ def apply_custom_styles():
 
 apply_custom_styles()
 
-
+# ---------------------------------------------------------------------------
+# 최상단: 앱 브랜딩 (브라우저 탭 제목과 동일)
+# ---------------------------------------------------------------------------
+st.markdown(
+    f"""
+<div class="page-hero">
+    <h1 class="page-hero-title">
+        펜세오의 자동매매 대시보드
+        <span class="page-hero-badge">{datetime.now().strftime('%H:%M')}</span>
+    </h1>
+</div>
+""",
+    unsafe_allow_html=True,
+)
 
 # -----------------------------------------------------------------------------
 # [DEBUG] Canary: Import Check
@@ -381,7 +394,7 @@ st.markdown(f"<!-- Cache Buster: {datetime.now(timezone.utc)} -->", unsafe_allow
 apply_custom_styles()
 
 # ---------------------------------------------------------------------------
-# 최상단: 연습모드 / 실제모드 (노란 강조 느낌의 모드 바)
+# 연습모드 / 실제모드 (노란 강조 느낌의 모드 바)
 # ---------------------------------------------------------------------------
 _em_row = st.columns([0.06, 0.88, 0.06])
 with _em_row[1]:
@@ -530,19 +543,6 @@ if is_real_mode:
             )
         else:
             st.info("실제모드에서 거래소와 연결하려면 **연동 테스트**를 통과해야 합니다.")
-
-st.markdown(
-    f"""
-<div class="page-hero">
-    <h1 class="page-hero-title">
-        🔥 급등 전조 탐지 대시보드
-        <span style="color:#00FFA3;">SHS</span>
-        <span class="page-hero-badge">{datetime.now().strftime('%H:%M')}</span>
-    </h1>
-</div>
-""",
-    unsafe_allow_html=True,
-)
 
 
 def get_exchange(market_type: str = "spot") -> ccxt.Exchange:
