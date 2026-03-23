@@ -13,9 +13,10 @@ import requests
 from bs4 import BeautifulSoup
 import feedparser
 import paper_trading as pt  # <--- CRITICAL FIX
+import daily_equity as de
 
 # 페이지 설정
-st.set_page_config(page_title="서한석의 코인 자동매매", layout="wide")
+st.set_page_config(page_title="급등 전조 탐지 대시보드", layout="wide")
 
 # (Removed old v3.0 Error Banner)
 
@@ -141,7 +142,7 @@ apply_custom_styles()
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        ⚡ 서한석의 코인 자동매매 <span style='color: #00FFA3'>PRO</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>v9.2 MOBILE READY ({datetime.now().strftime('%H:%M')})</span>
+        🔥 급등 전조 탐지 대시보드 <span style='color: #00FFA3'>SHS</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>({datetime.now().strftime('%H:%M')})</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -295,7 +296,7 @@ def scan_breakout(
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
 
         if df.empty:
-            return False, 0.0, 0.0, 0.0, "데이터 없음"
+            return False, 0.0, 0.0, 0.0, "데이터 없음", 0.0
 
         df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(float)
 
@@ -307,7 +308,7 @@ def scan_breakout(
         df = df.dropna().reset_index(drop=True)
 
         if df.empty:
-            return False, 0.0, 0.0, 0.0, "지표 계산 데이터 부족"
+            return False, 0.0, 0.0, 0.0, "지표 계산 데이터 부족", 0.0
 
         latest = df.iloc[-1]
         bb_upper = latest.get("BBU_20_2.0")
@@ -317,7 +318,7 @@ def scan_breakout(
         wpr_val = float(latest.get("wpr14", -100.0))
 
         if pd.isna(bb_upper) or pd.isna(bb_lower) or pd.isna(bb_mid) or bb_mid == 0:
-            return False, 0.0, rsi_val, wpr_val, "볼린저 밴드 계산 실패"
+            return False, 0.0, rsi_val, wpr_val, "볼린저 밴드 계산 실패", float(latest["close"])
 
         bandwidth = float((bb_upper - bb_lower) / bb_mid)
         is_squeeze = bandwidth < 0.05
@@ -326,9 +327,9 @@ def scan_breakout(
         is_wpr_recover = wpr_val > wpr_threshold
 
         detected = bool(is_squeeze and is_vol_spike and is_rsi_bullish and is_wpr_recover)
-        return detected, bandwidth, rsi_val, wpr_val, ""
+        return detected, bandwidth, rsi_val, wpr_val, "", float(latest["close"])
     except Exception as e:
-        return False, 0.0, 0.0, 0.0, str(e)
+        return False, 0.0, 0.0, 0.0, str(e), 0.0
 
 # 1. 강조할 긴급 키워드 설정
 URGENT_KEYWORDS = ["상장", "해킹", "유의", "폐지", "폭락", "SEC", "공격", "중단"]
@@ -426,147 +427,43 @@ def display_news_with_filter():
     news_html += "<h5 style='margin-top: 30px; color: #555; border-top: 1px dashed #333; padding-top: 15px; text-align:center;'>🌍 GLOBAL FEED ACTIVE</h5></div>"
     st.markdown(news_html, unsafe_allow_html=True)
 
-# --- 전략별 요약표 생성 함수 ---
-def display_strategy_summary():
-    """모든 전략의 성적을 취합하여 요약표를 생성합니다."""
-    # st.markdown("<div class='stCard'>", unsafe_allow_html=True) # 중복 카드 방지
-    st.subheader("📊 전략별 통합 성적표 (Multi-Strategy Summary)")
-    
-    # 전략 이름과 파일 매핑 (고수 전략: portfolio_master.json 사용)
-    strategy_map = {
-        "단기 스캘핑": "portfolio_scalping.json",
-        "중장기 스윙": "portfolio_long.json",
-        "고수의 기법": "portfolio_master.json", 
-        "하락장 역추세": "portfolio_dip.json",
-        "상승장 불러너": "portfolio_bull.json"
-    }
-    
-    summary_list = []
-    total_equity_all = 0
-    base_capital_per_strategy = 50000.0 # 각 전략당 시작 자금
-    
-    for name, fname in strategy_map.items():
-        # 파일 로드
-        pf = pt.load_portfolio(fname)
-        balance = pf.get("balance", base_capital_per_strategy)
-        
-        # 현재 평가 금액 계산 (보유 종목 포함)
-        holdings_value = 0
-        for symbol, info in pf.get("holdings", {}).items():
-            # cached_prices에 값이 있으면 실시간가, 없으면 평단가 사용
-            current_p = cached_prices.get(symbol, info["avg_price"])
-            holdings_value += info["amount"] * current_p
-            
-        equity = balance + holdings_value
-        pnl = equity - base_capital_per_strategy
-        pnl_pct = (pnl / base_capital_per_strategy) * 100
-        
-        total_equity_all += equity
-        
-        summary_list.append({
-            "전략 모드": name,
-            "평가 금액 (USDT)": f"{equity:,.2f}",
-            "누적 수익금": f"{pnl:,.2f}",
-            "수익률": f"{pnl_pct:+.2f}%"
-        })
-    
-    # 데이터프레임 변환 및 출력
-    df_summary = pd.DataFrame(summary_list)
-    
-    # 스타일 적용: 수익률 색상 구분 (pandas styler 활용)
-    # Streamlit dataframe은 색상 지정이 제한적이므로 단순히 표시하거나 HTML 변환 고려
-    # 여기서는 st.table 대신 st.dataframe 사용 권장 (가독성)
-    st.dataframe(df_summary, use_container_width=True, hide_index=True)
-    
-    # 전체 통합 자산 표시
-    total_pnl_all = total_equity_all - (base_capital_per_strategy * 4)
-    color_hex = "#FF0055" if total_pnl_all >= 0 else "#00FFA3"
-    
-    st.markdown(f"""
-    <div style='text-align: right; padding: 10px; font-size: 1.1em; background: rgba(255,255,255,0.05); border-radius: 10px; margin-top: 10px;'>
-        전체 통합 자산: <span style='color: #FFF; font-weight: bold;'>{total_equity_all:,.2f} USDT</span> 
-        (합계 수익: <span style='color: {color_hex}; font-weight: bold;'>{total_pnl_all:,.2f}</span>)
-    </div>
-    """, unsafe_allow_html=True)
-    # st.markdown("</div>", unsafe_allow_html=True)
-
-
-
-
 with st.sidebar:
     st.subheader("설정")
-    # ... (Sidebar Config Logic Unchanged) ...
-    # 1. 전략 선택 (최상위)
-    strategy_mode = st.selectbox(
-        "전략 선택", 
-        [
-            "단기 스캘핑 (1m/5m)", 
-            "중장기 스윙 (1h~1d)", 
-            "고수의 기법 (Triple Confirm)", 
-            "📉 하락장 역추세 (Dip Buying)",
-            "🚀 상승장 불러너 (Bull Runner)"
-        ]
+    portfolio_file = "portfolio_breakout.json"
+    portfolio_label = "급등 전조 탐지"
+    st.markdown("### 🔥 급등 전조 탐지 (단일 전략)")
+
+    st.divider()
+    st.subheader("모의 매매 (선택)")
+    use_paper = st.checkbox("모의 매매 사용", value=False, key="use_paper_breakout")
+    paper_cash = st.number_input(
+        "모의 자금 (USDT)",
+        min_value=0.0,
+        max_value=100000000.0,
+        value=0.0,
+        step=100.0,
+        key="paper_cash_breakout",
     )
-    
-    # 기본값 설정
-    default_vol = 1.1
-    default_wpr = -85
-    
-    # 2. 타임프레임 (전략에 종속)
-    if strategy_mode.startswith("단기"): # 스캘핑
-        timeframe = st.selectbox("타임프레임", ["1m", "5m"], index=1)
-        portfolio_file = "portfolio_scalping.json"
-        portfolio_label = "단타 (Scalping)"
-        default_vol = 1.3 # 스캘핑 기본 1.3배 (완화)
-        st.info("⚡ 스캘핑 전략 (1m/5m)\n• 조건: 횡보(Squeeze) + 정배열(EMA) + 거래량 1.3배\n• 익절: +1.25% (순수익 1%) / 손절: -1.0%")
-        
-    elif strategy_mode.startswith("고수"): # 고수
-        timeframe = st.selectbox("타임프레임", ["15m", "1h", "4h"], index=0) # 15분 기본
-        portfolio_file = "portfolio_master.json"
-        portfolio_label = "고수 (Master)"
-        default_wpr = -80
-        st.info("🔥 고수의 기법 (15m+)\n• 조건: WPR 과매도 탈출 + 거래량 폭발 + 정배열\n• 익절: +3~5% / 손절: -3%")
-        
-    elif strategy_mode.startswith("하락장"): # 하락장 역추세
-        timeframe = st.selectbox("타임프레임", ["15m", "1h"], index=0)
-        portfolio_file = "portfolio_dip.json"
-        portfolio_label = "역추세 (Dip Buying)"
-        default_vol = 1.0 
-        st.info("📉 하락장 역추세 (Dip Buying)\n• 조건: RSI < 30 (과매도) + 볼린저밴드 하단 돌파\n• 목표: 기술적 반등 (Dead Cat Bounce) 노리기\n• 주의: 하락장 전용 리스크 관리 필수")
+    if st.button("모의 자금 입금(잔액 반영)", key="apply_paper_cash_btn"):
+        pf_cash = pt.load_portfolio(portfolio_file)
+        pf_cash["balance"] = float(paper_cash)
+        pf_cash["starting_capital"] = float(paper_cash)
+        pt.save_portfolio(pf_cash, portfolio_file)
+        st.success("모의 자금이 반영되었습니다.")
+        st.rerun()
 
-    elif strategy_mode.startswith("🚀"): # Bull Runner
-         timeframe = st.selectbox("타임프레임", ["15m", "1h"], index=0)
-         portfolio_file = "portfolio_bull.json"
-         portfolio_label = "상승장 불러너 (Bull Runner)"
-         
-         # 2. 대시보드 메인 타이틀 강조 (User Request)
-         st.markdown("<h2 style='color: #00FFA3; text-align: center;'>🏃‍♂️ BULL RUNNER ACTIVE: 1% Target Mode</h2>", unsafe_allow_html=True)
-         st.info("🚀 불러너 (Bull Runner)\n• 조건: 정배열 + BB상단 돌파 + 거래량 1.5배\n• 목표: 5,000불 운영 / TP 1.25% / SL -0.8%")
-        
-    elif strategy_mode.startswith("중장기"): # 스윙
-        timeframe = st.selectbox("타임프레임", ["1h", "4h", "1d"], index=0)
-        portfolio_file = "portfolio_long.json"
-        portfolio_label = "장기 (Long-Term)"
-        default_vol = 1.1 # 스윙은 널널하게
-        st.info("💎 스윙 전략 (1h-1d)\n• 조건: 장기 추세(EMA99) + RSI 안정권(50~70)\n• 목표: 추세가 꺾일 때까지 장기 보유")
-        
-    else: # 고수의 기법
-        timeframe = st.selectbox("타임프레임", ["15m"], index=0)
-        portfolio_file = "portfolio_my.json"
-        portfolio_label = "고수의 기법 (Triple Confirm)"
-        default_vol = 1.5 # "최소 1.5배는 터져야 진짜 수급"
-        default_wpr = -80 # "-85보다 -80이 적절"
-        st.info("💡 15분봉 실전 단타: 정배열(EMA7>25) + WPR(-80) 탈출 + 거래량(1.5배)")
+    st.divider()
+    st.subheader("익절 / 손절 (모의)")
+    breakout_tp = st.slider("익절 (%)", 0.3, 10.0, 1.25, 0.05, key="tp_breakout_only")
+    breakout_sl = st.slider("손절 (%)", 0.3, 10.0, 0.8, 0.05, key="sl_breakout_only")
+    trade_amount = st.slider("1회 매수 금액 (USDT)", 100.0, 5000.0, 5000.0, 100.0, key="trade_amt_breakout")
 
-    # 슬라이더 (key를 설정해서 전략 변경 시 리셋/재설정 되도록 유도하거나, value에 변수 할당)
-    # key에 전략 모드를 포함시켜서 전환 시 새로운 값이 적용되도록 함
-    top_n = st.slider("스캔 개수", min_value=5, max_value=50, value=20, step=5)
-    vol_mult = st.slider("거래량 조건(이동평균 대비 배수)", 1.0, 5.0, default_vol, 0.1, key=f"vol_{strategy_mode}") 
-    wpr_level = st.slider("WPR 기준선(과매도 탈출)", -95, -50, default_wpr, 1, key=f"wpr_{strategy_mode}")
+    st.divider()
+    top_n = st.slider("스캔 개수 (거래량 상위)", min_value=5, max_value=50, value=20, step=5)
     st.caption("데이터는 바이낸스 공개 시세(지연/누락 가능).")
 
     st.divider()
-    st.subheader("🔥 급등 전조 탐지 설정")
+    st.subheader("🔥 급등 전조 탐지 파라미터")
     breakout_timeframe = st.selectbox(
         "탐지 타임프레임",
         ["5m", "15m", "1h"],
@@ -604,7 +501,7 @@ with st.sidebar:
         breakout_rows = []
 
         for ticker in tickers:
-            detected, bw, rsi, wpr, err = scan_breakout(
+            detected, bw, rsi, wpr, err, _lc = scan_breakout(
                 ticker,
                 timeframe=breakout_timeframe,
                 limit=breakout_limit,
@@ -629,19 +526,9 @@ with st.sidebar:
     st.divider()
     st.subheader("자동 갱신")
     auto_refresh = st.checkbox("자동 새로고침 켜기", value=True)
-    
-    # 전략별 추천 갱신 주기 설정
-    if strategy_mode.startswith("단기"):
-        rec_refresh = 10
-        rec_msg = "추천: 10~15초 (API 안전 및 대응 충분)"
-    elif strategy_mode.startswith("중장기"):
-        rec_refresh = 60
-        rec_msg = "추천: 60~120초 (긴 호흡, API 효율)"
-    else: # 고수의 기법
-        rec_refresh = 20
-        rec_msg = "추천: 20~30초 (진중한 신호 확인)"
-
-    refresh_sec = st.slider("갱신 주기(초)", 5, 120, rec_refresh, key=f"refresh_{strategy_mode}")
+    rec_refresh = 20
+    rec_msg = "추천: 20~30초 (급등 전조 스캔)"
+    refresh_sec = st.slider("갱신 주기(초)", 5, 120, rec_refresh, key="refresh_breakout_only")
     st.caption(f"💡 {rec_msg}")
     
     st.divider()
@@ -664,24 +551,36 @@ for symbol, h in pf_init["holdings"].items():
     c_price = cached_prices.get(symbol, h["avg_price"])
     initial_equity += h["amount"] * c_price
 
-# 수익률 계산 (기준 5만불)
-# 나중에 update_portfolio_status가 돌면 더 정확하겠지만, 헤더 단계에선 근사치 제공
-base_capital = 50000.0
-pnl_amount = initial_equity - base_capital
-pnl_pct = (pnl_amount / base_capital) * 100
+# 수익률: 모의 자금(starting_capital) 설정 시에만 표시 (5만불 기본 제거)
+_start_cap = float(pf_init.get("starting_capital", 0.0))
+if _start_cap > 0:
+    pnl_amount = initial_equity - _start_cap
+    pnl_pct = (pnl_amount / _start_cap) * 100
+else:
+    pnl_amount = 0.0
+    pnl_pct = 0.0
+
+# 일자별 24h 수익 (KST 매일 09:00 스냅샷)
+try:
+    de.update_snapshots(initial_equity, portfolio_file)
+except Exception:
+    pass
+df_daily_pnl = de.build_daily_report(initial_equity, portfolio_file)
 
 st.divider()
 
 # 메트릭 카드 HTML 생성
 delta_color = "delta-pos" if pnl_pct >= 0 else "delta-neg"
 pnl_icon = "▲" if pnl_pct >= 0 else "▼"
+pnl_display = f"{pnl_amount:,.2f}" if _start_cap > 0 else "-"
+pnl_pct_display = f"{pnl_pct:.2f}%" if _start_cap > 0 else "-"
 
 st.markdown(f"""
 <div class="metric-row">
     <div class="metric-card">
-        <div class="metric-label">실시간 수익(USDT)</div>
-        <div class="metric-value {delta_color}">{pnl_amount:,.2f}</div>
-        <div class="metric-delta {delta_color}">{pnl_icon} {pnl_pct:.2f}%</div>
+        <div class="metric-label">손익(모의, 입금 설정 시)</div>
+        <div class="metric-value {delta_color}">{pnl_display}</div>
+        <div class="metric-delta {delta_color}">{pnl_icon} {pnl_pct_display}</div>
     </div>
     <div class="metric-card">
         <div class="metric-label">보유 종목</div>
@@ -701,11 +600,15 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+st.subheader("📅 일자별 수익 현황 (24h · KST 09:00 기준)")
+st.caption(
+    "매 거래일 **09:00(한국시간)** 에 평가금액을 1회 스냅샷합니다. "
+    "전일 09:00 자산 대비 당일 09:00 자산으로 **24시간 수익률**을 계산합니다. "
+    "당일은 09:00 이후 첫 실행 시점의 자산이 당일 스냅샷으로 저장됩니다."
+)
+st.dataframe(df_daily_pnl, use_container_width=True, hide_index=True)
 
-# [UI UPDATE] 전략별 요약표 출력
-display_strategy_summary()
-
-st.caption(f"현재 모드: {portfolio_mode} - 타임프레임에 따라 계좌가 자동 전환됩니다.")
+st.caption(f"현재 모드: {portfolio_mode} (단일 전략)")
 st.divider()
 
 # 레이아웃 구성 (7:3)
@@ -718,7 +621,7 @@ with col_news:
 # 좌측 메인 차트/스캔 영역 (Card 적용)
 with col_main:
     st.markdown('<div class="stCard">', unsafe_allow_html=True) # 카드 시작
-    st.subheader(f"🔥 실시간 정밀 스캔 (USDT 마켓 / 거래량 상위 {top_n}개 기준)")
+    st.subheader(f"🔥 급등 전조 탐지 스캔 (USDT / 거래량 상위 {top_n}개)")
 
 # 기존 try-except 문을 아래처럼 수정해서 에러 내용을 확인합니다.
 try:
@@ -730,8 +633,6 @@ except Exception as e:
 
 symbols = [s for s in markets.keys() if isinstance(s, str) and s.endswith("/USDT")]
 top_symbols = sorted(symbols, key=lambda x: safe_quote_volume(markets, x), reverse=True)[: int(top_n)]
-
-import concurrent.futures
 
 # BTC 추세 확인 (User Request: Remove Banner)
 # exchange = get_exchange()
@@ -753,7 +654,6 @@ import concurrent.futures
 # exchange = safe_exchange (Moved below)
 
 current_prices = {}
-status_data = []
 
 # [SPEED FIX] 전역 Exchange 인스턴스 (재사용)
 # 매번 생성하면 SSL 핸드쉐이크 등으로 인해 3~5배 느려짐.
@@ -777,327 +677,89 @@ safe_exchange = ccxt.binance({
 })
 exchange = safe_exchange # [FIX] NameError 방지용 별칭 (여기서 정의해야 함)
 
-# [SPEED UPDATE] Thread-Safe Fetch Function (No Streamlit Cache)
-import concurrent.futures
 import traceback
-
-def fetch_raw_data_safe(symbol, tf, limit=200):
-    try:
-        # 전역 인스턴스 재사용 (속도 향상)
-        ohlcv = safe_exchange.fetch_ohlcv(symbol, timeframe=tf, limit=limit)
-        df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-
-        # [FIX] Ensure numeric columns are floats
-        cols = ["open", "high", "low", "close", "volume"]
-        df[cols] = df[cols].astype(float)
-
-        # 지표 계산
-        df["ema7"] = ta.ema(df["close"], length=7)
-        df["ema25"] = ta.ema(df["close"], length=25)
-        df["ema99"] = ta.ema(df["close"], length=99)
-        df["rsi14"] = ta.rsi(df["close"], length=14)
-        df["wpr"] = ta.willr(df["high"], df["low"], df["close"], length=14)
-        
-        # MACD
-        macd = ta.macd(df["close"])
-        df = pd.concat([df, macd], axis=1)
-
-        # BB (20, 2)
-        bb = ta.bbands(df["close"], length=20, std=2.0)
-        df = pd.concat([df, bb], axis=1)
-        
-        # Vol MA & ATR
-        df["vol_ma5"] = ta.sma(df["volume"], length=5)
-        df["vol_ma"] = ta.sma(df["volume"], length=10)
-        
-        # BB Width
-        if "BBU_20_2.0" in df.columns:
-            df["bb_width"] = (df["BBU_20_2.0"] - df["BBL_20_2.0"]) / df["BBM_20_2.0"]
-        else:
-             df["bb_width"] = 0.0
-
-        if len(df) < 5: return None, "Not enough data"
-        return df, None
-    except Exception as e:
-        return None, f"Error: {str(e)}"
 
 # 스캔 시작 (Debug Mode Option)
 debug_mode = st.sidebar.checkbox("🔧 디버그 모드 (에러 확인)", value=False)
 
-progress_text = "⚡ 스캔 중 (Sequential Safe Mode)..."
+progress_text = "⚡ 급등 전조 스캔 중..."
 progress_bar = col_main.progress(0, text=progress_text)
-results = []
+status_data = []
 errors = []
 
-# [STABILITY FIX] 병렬 처리 제거 -> 순차 처리로 복귀 (안정성 최우선)
 try:
     for i, symbol in enumerate(top_symbols):
-        # Global 'timeframe' variable access
-        df, err = fetch_raw_data_safe(symbol, timeframe)
-        
-        if df is not None:
-             results.append((symbol, df))
+        detected, bw, rsi, wpr, err, last_px = scan_breakout(
+            symbol,
+            timeframe=breakout_timeframe,
+            limit=breakout_limit,
+            rsi_threshold=float(breakout_rsi_threshold),
+            wpr_threshold=float(breakout_wpr_threshold),
+        )
+        if err:
+            errors.append(f"{symbol}: {err}")
+            display_signal = "⚠️ 오류"
+        elif detected:
+            display_signal = "🚨 탐지"
         else:
-             errors.append(f"{symbol}: {err}")
-        
-        # 진행률 업데이트
-        progress_bar.progress((i + 1) / len(top_symbols), text=f"{progress_text} ({i + 1}/{len(top_symbols)})")
+            display_signal = "관망"
 
+        lp = float(last_px) if last_px else 0.0
+        if lp > 0:
+            current_prices[symbol] = lp
+
+        status_data.append({
+            "종목": symbol,
+            "현재가": lp,
+            "진입 신호": display_signal,
+            "밴드폭": f"{bw:.3f}",
+            "RSI": round(float(rsi), 1) if rsi is not None else None,
+            "WPR": round(float(wpr), 1) if wpr is not None else None,
+        })
+
+        should_buy = bool(use_paper and detected and not err)
+        if should_buy:
+            curr_pf = pt.load_portfolio(portfolio_file)
+            if symbol not in curr_pf.get("holdings", {}) or curr_pf["holdings"][symbol].get("amount", 0) <= 0:
+                bid_price = get_best_bid(exchange, symbol)
+                entry_price = float(bid_price) if bid_price else lp
+                success, msg = pt.buy_coin(
+                    symbol, entry_price, invest_amount=float(trade_amount), filename=portfolio_file
+                )
+                if success:
+                    st.toast(f"✅ {symbol} 매수 완료! ({entry_price})")
+
+        curr_pf = pt.load_portfolio(portfolio_file)
+        if symbol in curr_pf.get("holdings", {}):
+            holding = curr_pf["holdings"][symbol]
+            amt = holding["amount"]
+            if amt > 0:
+                cur_p = lp if lp > 0 else float(holding["avg_price"])
+                profit_pct = (cur_p - holding["avg_price"]) / holding["avg_price"] * 100
+                should_sell = False
+                sell_reason = ""
+                if profit_pct >= float(breakout_tp):
+                    should_sell = True
+                    sell_reason = f"익절 ({float(breakout_tp):.2f}%)"
+                elif profit_pct <= -float(breakout_sl):
+                    should_sell = True
+                    sell_reason = f"손절 (-{float(breakout_sl):.2f}%)"
+                if should_sell and not enable_lock:
+                    success, msg = pt.sell_coin(symbol, cur_p, amt, filename=portfolio_file)
+                    if success:
+                        st.toast(f"{sell_reason}: {symbol} ({profit_pct:.2f}%)")
+
+        progress_bar.progress(
+            (i + 1) / len(top_symbols),
+            text=f"{progress_text} ({i + 1}/{len(top_symbols)})",
+        )
 except Exception as e:
     col_main.error(f"❌ 치명적 오류 발생: {str(e)}")
     col_main.code(traceback.format_exc())
-    # 에러 발생해도 일부 결과라도 있으면 보여주기 위해 진행
-    pass
 
 if debug_mode and errors:
     col_main.error(f"스캔 실패 ({len(errors)}개): {errors[:5]}...")
 
-# 결과 처리
-for idx, (symbol, df) in enumerate(results):
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-
-    # --- 전략 판별 로직 ---
-
-    # 1. 단기 전략 (Short-term / Scalping) 수정
-    # 정배열 상태 유지 (EMA 7 > EMA 25)
-    is_st_trend = False
-    if pd.notnull(last.get("ema7")) and pd.notnull(last.get("ema25")):
-        try:
-            is_st_trend = bool(last["ema7"] > last["ema25"])
-        except Exception:
-            is_st_trend = False
-    
-    # 거래량 조건 완화: 1.3배 (현실적인 수급 포착)
-    is_vol_pump = (last["volume"] > last["vol_ma5"] * vol_mult)
-    
-    # RSI 컨펌: 50 이상이면 힘이 붙은 상태
-    is_rsi_up = (last["rsi14"] > 50)
-    
-    st_score = "관망"
-    # 'is_gc'(방금 교차) 대신 'is_st_trend'(정배열 유지)를 사용하여 진입 기회 확대
-    if is_st_trend and is_vol_pump and is_rsi_up:
-        # BB Width가 좁으면(0.15 미만) 응축 후 발산 초기, 넓으면 이미 추세 진행 중
-        if last["bb_width"] < 0.15:
-             st_score = "🚀 단기 급등 (Squeeze Start)"
-        else:
-             st_score = "🚀 단기 급등 (Trend Riding)"
-
-    # 2. 장기 전략 (Long-term)
-    # 가격이 EMA 99 위 + RSI가 50~70 사이 (안정적 상승 구간)
-    # [FIX] EMA99가 NaN일 경우 비교 시 TypeError 발생 방지
-    # [FIX] Robust comparison to prevent TypeError
-    is_lt_trend = False
-    
-    # Check if keys exist and values are valid
-    if pd.notnull(last.get("ema99")) and pd.notnull(last.get("close")):
-        try:
-             # Direct comparison
-             is_lt_trend = bool(last["close"] > last["ema99"])
-        except (TypeError, ValueError):
-             try:
-                 # Explicit float conversion as fallback
-                 is_lt_trend = bool(float(last["close"]) > float(last["ema99"]))
-             except Exception:
-                 is_lt_trend = False
-    is_lt_rsi = bool(50 < last["rsi14"] < 70) if "rsi14" in last else False
-    
-    lt_score = "💎 장기 보유" if (is_lt_trend and is_lt_rsi) else "비중 축소"
-    
-    # --- 고수의 기법: 나만의 기법 (Master Strategy) ---
-
-    # 1. 조건 정의
-    # 장기 추세(Filter): 가격이 EMA 99(장기 이평선) 위에 있어 전체적인 흐름이 상승장일 것. -> BTC로 1차 필터했으므로 개별 종목은 정배열 체크
-    is_master_trend = False
-    if pd.notnull(last.get("ema99")) and pd.notnull(last.get("close")):
-        try:
-             is_master_trend = bool(last["close"] > last["ema99"])
-        except Exception:
-             is_master_trend = False
-    
-    # "정배열" (EMA7 > EMA25) 추가 (New Requirement)
-    is_master_align = False
-    if pd.notnull(last.get("ema7")) and pd.notnull(last.get("ema25")):
-        try:
-            is_master_align = bool(last["ema7"] > last["ema25"])
-        except Exception:
-            is_master_align = False
-    
-    # WPR -80 탈출 (Trigger): 설정값 wpr_level 활용
-    is_master_wpr = prev["wpr"] < wpr_level and last["wpr"] > wpr_level
-    
-    # 거래량 폭발(Confirm): 설정값 배수 사용 (1.5배)
-    is_master_vol = last["volume"] > (last["vol_ma"] * vol_mult)
-    
-    # RSI 조건 (힘이 실리기 시작함) - 보조
-    is_master_rsi = last["rsi14"] > 50
-
-    # 2. 신호 결정
-    master_signal = "관망"
-    # 조건: BTC상승(기본) + 정배열(EMA7>25) + WPR탈출 + 거래량폭발
-    if is_master_align and is_master_wpr and is_master_vol:
-        master_signal = "🔥 실전 단타 진입 (강력매수)"
-    elif is_master_trend and is_master_rsi and is_master_vol and is_master_wpr:
-        master_signal = "⚡ 추세 돌파 (추격매수)"
-
-    # 4. 하락장 역추세 (Dip Buying)
-    # 조건: RSI < 30 (심각한 과매도) + 가격 < BB 하단 (패닉 셀링)
-    is_dip_rsi = last["rsi14"] < 30
-    is_dip_bb = last["close"] < (last["BBL_20_2.0"] if "BBL_20_2.0" in last else 0)
-    
-    dip_signal = "관망"
-    if is_dip_rsi:
-         dip_signal = "🌊 과매도 진입 (RSI<30)"
-    if is_dip_rsi and is_dip_bb:
-         dip_signal = "💎 극단적 저점 (Strong Buy)"
-
-    # 5. 상승장 불러너 (Bull Runner)
-    # 모멘텀 돌파: 정배열 + BB상단 돌파 + 거래량 1.5배 폭발
-    is_bull_trend = False
-    if pd.notnull(last.get("ema7")) and pd.notnull(last.get("ema25")):
-        try:
-            is_bull_trend = bool(last["ema7"] > last["ema25"]) # 정배열
-        except Exception:
-            is_bull_trend = False
-    is_bull_break = (last["close"] > last["BBU_20_2.0"] if "BBU_20_2.0" in last else False) # 상단 돌파
-    is_bull_vol = (last["volume"] > last["vol_ma5"] * 1.5) # 거래량 1.5배
-    
-    bull_score = "관망"
-    if is_bull_trend and is_bull_break and is_bull_vol:
-         bull_score = "🏃‍♂️ 모멘텀 돌파 (Bull Run)"
-
-    # 현재 모드에 맞는 신호 선택
-    if strategy_mode.startswith("단기"):
-         display_signal = st_score
-    elif strategy_mode.startswith("중장기"):
-         display_signal = lt_score
-    elif strategy_mode.startswith("고수"):
-         display_signal = master_signal
-    elif strategy_mode.startswith("🚀"):
-         display_signal = bull_score
-    else: # 하락장
-         display_signal = dip_signal
-         
-    # 3. 데이터프레임에 추가
-    status_data.append({
-        "종목": symbol,
-        "현재가": float(last["close"]),
-        "진입 신호": display_signal,
-        "추세(EMA)": "상승/정배열" if (is_st_trend or is_lt_trend) else "하락/역배열", # 참고용
-        "RSI": round(float(last["rsi14"]), 1) if "rsi14" in last else None,
-        "거래량": f"{round(last['volume']/last['vol_ma'], 1)}배"
-    })
-
-    # 모의 매수 & 매도 (현재 모드에 맞춰서)
-    buy_msg = None
-    should_buy = False
-    
-    # 모드별 매수 조건 (Display Signal 기반으로 판단 가능)
-    if "🚀" in display_signal: # 단기 급등
-        should_buy = True
-    elif "강력매수" in display_signal or "추격매수" in display_signal: # 고수
-        should_buy = True
-    elif "장기 보유" in display_signal: # 장기
-        should_buy = True
-    elif "과매도" in display_signal or "극단적" in display_signal: # 하락장
-        should_buy = True
-    elif "Bull Run" in display_signal: # 불러너
-        should_buy = True
-            
-    # 매수 실행
-    if should_buy:
-        if False: # Forced Enable (Disabled BTC Filter)
-            buy_msg = "BTC 하락장 (스필)"
-        else:
-            # 중복 매수 방지
-            curr_pf = pt.load_portfolio(portfolio_file)
-            if symbol in curr_pf["holdings"] and curr_pf["holdings"][symbol]["amount"] > 0:
-                 buy_msg = "보유 중 (스킵)"
-            else:
-                # 투자금 설정 (단타: 3000불, 불러너: 5000불, 나머지: 1000불)
-                if strategy_mode.startswith("단기"):
-                    invest_money = 3000.0
-                elif strategy_mode.startswith("🚀"): # Bull Runner
-                    invest_money = 5000.0
-                else:
-                    invest_money = 1000.0
-                
-                # 지정가 매수 시뮬레이션 (호가 조회)
-                bid_price = get_best_bid(exchange, symbol)
-                entry_price = bid_price if bid_price else float(last["close"])
-
-                success, msg = pt.buy_coin(symbol, entry_price, invest_amount=invest_money, filename=portfolio_file)
-                if success:
-                    buy_msg = "매수 체결 완료"
-                    st.toast(f"✅ {symbol} 매수 완료! ({entry_price})")
-                else:
-                    buy_msg = f"매수 실패: {msg}"
-
-    # [매도 로직 업데이트]
-    # 스캘핑: TP 1.0%, SL (EMA 7 꺾임)
-    # 고수/장기: TP 10% (기존 유지?) -> 고수는 TP에 대한 언급 없었으나 "자신있게 들어가 볼 만한 자리" -> 일단 10% 유지 or 수동
-    # 기존 코드의 10% 로직을 모드별로 분기
-    
-    curr_pf = pt.load_portfolio(portfolio_file)
-    if symbol in curr_pf["holdings"]:
-        holding = curr_pf["holdings"][symbol]
-        amt = holding["amount"]
-        if amt > 0:
-            avg_p = holding["avg_price"]
-            cur_p = float(last["close"])
-            profit_pct = (cur_p - avg_p) / avg_p * 100
-            
-            should_sell = False
-            sell_reason = ""
-            
-            if portfolio_mode.startswith("단타"):
-                # 익절: 수수료 약 0.2% 제외하고 순수익 1% 이상일 때 (1.25% 설정)
-                if profit_pct >= 1.25:
-                    should_sell = True
-                    sell_reason = "익절 (순수익 1% 확정)"
-                # 손절: -1.0% (수익 대비 손실 폭을 짧게 유지)
-                elif profit_pct <= -1.0:
-                    should_sell = True
-                    sell_reason = "손절 (-1.0% 보호)"
-            
-            elif portfolio_mode.startswith("장기"): # 스윙 (추세 추종)
-                # 설명대로 "추세가 꺾일 때까지" 보유
-                # 추세 기준: Price < EMA99 (상승 추세 이탈)
-                if last["close"] < last["ema99"]:
-                     should_sell = True
-                     sell_reason = "매도 (추세 이탈 EMA99)"
-                # (옵션) 익절 없음? 혹은 매우 큰 익절(50%?)
-                # 일단 추세 꺾임만 봅니다.
-                
-            elif portfolio_mode.startswith("상승장") or portfolio_mode.startswith("🚀"): # 불러너
-                # TP: 1.25%, SL: -0.8%
-                if profit_pct >= 1.25:
-                    should_sell = True
-                    sell_reason = "익절 (Target 1.25%)"
-                elif profit_pct <= -0.8:
-                    should_sell = True
-                    sell_reason = "손절 (Risk -0.8%)"
-
-            else: # 고수의 기법 (실전 단타)
-                # TP: +2.5%, SL: -1.5%
-                if profit_pct >= 2.5:
-                    should_sell = True
-                    sell_reason = "익절 (+2.5%)"
-                elif profit_pct <= -1.5:
-                    should_sell = True
-                    sell_reason = "손절 (-1.5%)"
-
-            if should_sell and not enable_lock:
-                success, msg = pt.sell_coin(symbol, cur_p, amt, filename=portfolio_file)
-                if success:
-                    print(f"💰 {sell_reason}: {symbol} ({profit_pct:.2f}%)")
-
-    progress_bar.progress(
-        (idx + 1) / max(len(results), 1),
-        text=f"결과 처리 중… ({idx + 1}/{len(results)})",
-    )
-# 스캔 완료 후 프로그레스 바 제거
 progress_bar.empty()
 
 # 필터링 없이 전체 리스트 출력 (메인 화면 단순화)
@@ -1113,6 +775,8 @@ else:
     # 스타일 적용 함수
     def highlight_signal(val):
         val_str = str(val)
+        if "🚨" in val_str:
+            return "background-color: #ff4b4b; color: white; font-weight: bold"
         if "🚀" in val_str: 
             return "background-color: #ff4b4b; color: white; font-weight: bold"
         elif "💎" in val_str: 
@@ -1186,9 +850,7 @@ with tab_holdings:
 with tab_history:
     # 모든 포트폴리오 파일에서 기록 취합
     all_files = {
-        "단타(Scalping)": "portfolio_scalping.json",
-        "장기(Swing)": "portfolio_long.json",
-        "고수(Master)": "portfolio_my.json"
+        "급등 전조 탐지": "portfolio_breakout.json",
     }
     
     all_trades = []
@@ -1276,7 +938,7 @@ if df_all.empty:
     # 여기서는 안내 문구만 수정
 else:
     selected_coin = col_main.selectbox("상세 차트 분석", df_all["종목"].tolist())
-    df_chart = get_data(selected_coin, timeframe=timeframe, limit=300)
+    df_chart = get_data(selected_coin, timeframe=breakout_timeframe, limit=300)
     if df_chart is None:
         col_main.error("해당 종목의 차트 데이터를 불러오지 못했습니다.")
     else:

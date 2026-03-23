@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 
 PORTFOLIO_FILE = "portfolio.json"
-DEFAULT_BALANCE = 50000.0  # 초기 지급 USDT
+DEFAULT_BALANCE = 0.0  # 기본 모의 자금 없음 (앱에서 설정 시 입금)
 
 def load_portfolio(filename=PORTFOLIO_FILE):
     """포트폴리오 파일 로드 또는 초기화"""
@@ -13,14 +13,17 @@ def load_portfolio(filename=PORTFOLIO_FILE):
         return {
             "balance": DEFAULT_BALANCE,
             "holdings": {},
-            "history": []
+            "history": [],
+            "starting_capital": 0.0,
         }
     try:
         with open(filename, "r", encoding="utf-8") as f:
             data = json.load(f)
             # 호환성 보장: history 키가 없으면 추가
             if "history" not in data:
-                data["history"] = data.get("trades", []) 
+                data["history"] = data.get("trades", [])
+            if "starting_capital" not in data:
+                data["starting_capital"] = 0.0
             return data
     except Exception as e:
         print(f"Error loading {filename}: {e}")
@@ -33,7 +36,8 @@ def load_portfolio(filename=PORTFOLIO_FILE):
         return {
             "balance": DEFAULT_BALANCE,
             "holdings": {},
-            "history": []
+            "history": [],
+            "starting_capital": 0.0,
         }
 
 def save_portfolio(portfolio, filename=PORTFOLIO_FILE):
@@ -114,9 +118,13 @@ def get_portfolio_status(current_prices: dict, filename=PORTFOLIO_FILE):
         })
         
     total_equity = total_balance + holdings_val
-    initial = DEFAULT_BALANCE # 가정
-    total_pnl = total_equity - initial
-    total_pnl_pct = (total_pnl / initial) * 100
+    initial = float(pf.get("starting_capital", DEFAULT_BALANCE))
+    if initial <= 0:
+        total_pnl = 0.0
+        total_pnl_pct = 0.0
+    else:
+        total_pnl = total_equity - initial
+        total_pnl_pct = (total_pnl / initial) * 100
     
     return {
         "balance": total_balance,
