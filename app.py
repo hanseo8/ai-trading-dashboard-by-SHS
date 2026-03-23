@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 import time
 import math
 import textwrap
+import html as html_escape
 import requests
 from bs4 import BeautifulSoup
 import feedparser
@@ -76,23 +77,30 @@ def apply_custom_styles():
     <style>
         :root {
             --bg-color: #0E1117;
-            --card-bg: #1E1E1E;
+            --card-bg: #1a1d23;
             --text-color: #E0E0E0;
             --neon-green: #00FFA3;
             --neon-red: #FF0055;
             --cyber_blue: #00D2FF;
             --border-radius: 12px;
+            --border-subtle: rgba(255,255,255,0.07);
+            --section-gap: 1.5rem;
         }
         
         .stApp { background-color: var(--bg-color); color: var(--text-color); }
+        .block-container {
+            padding-top: 1rem !important;
+            padding-bottom: 2.5rem !important;
+            max-width: 1680px !important;
+        }
         
         .stCard {
             background-color: var(--card-bg);
             padding: 20px;
             border-radius: var(--border-radius);
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-            margin-bottom: 20px;
-            border: 1px solid #333;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            margin-bottom: var(--section-gap);
+            border: 1px solid var(--border-subtle);
         }
         
         .news-container {
@@ -116,19 +124,19 @@ def apply_custom_styles():
         ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #666; }
         
-        .metric-row { display: flex; gap: 15px; justify-content: space-between; margin-bottom: 20px; }
+        .metric-row { display: flex; gap: 1rem; justify-content: space-between; margin-bottom: var(--section-gap); }
         .metric-card {
-            background-color: var(--card-bg);
+            background: linear-gradient(180deg, #1e222a 0%, #1a1d23 100%);
             flex: 1;
-            padding: 15px;
+            padding: 16px 14px;
             border-radius: var(--border-radius);
             text-align: center;
-            border: 1px solid #333;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            border: 1px solid var(--border-subtle);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.25);
         }
-        .metric-label { font-size: 0.9em; color: #888; margin-bottom: 5px; }
-        .metric-value { font-size: 1.6em; font-weight: bold; color: #FFF; }
-        .metric-delta { font-size: 0.9em; }
+        .metric-label { font-size: 0.78rem; color: #9ca3af; margin-bottom: 6px; font-weight: 500; letter-spacing: 0.02em; }
+        .metric-value { font-size: 1.45rem; font-weight: 700; color: #f9fafb; letter-spacing: -0.02em; }
+        .metric-delta { font-size: 0.82rem; }
         .delta-pos { color: var(--neon-green); }
         .delta-neg { color: var(--neon-red); }
         
@@ -150,10 +158,192 @@ def apply_custom_styles():
         .badge-danger { background-color: rgba(255, 0, 85, 0.2); color: var(--neon-red); border: 1px solid var(--neon-red); }
         .badge-info { background-color: rgba(0, 210, 255, 0.2); color: var(--cyber_blue); border: 1px solid var(--cyber_blue); }
 
+        /* 실시간 뉴스 패널 (우측 피드) */
+        .news-panel-wrap {
+            background: linear-gradient(165deg, #1a1d24 0%, #12141a 100%);
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04);
+            padding: 0;
+            height: 750px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .news-panel-header {
+            flex-shrink: 0;
+            padding: 18px 20px 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            background: rgba(0,0,0,0.25);
+        }
+        .news-panel-kicker {
+            font-size: 0.68rem;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: #6b7280;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        .news-panel-title {
+            margin: 0;
+            color: #f3f4f6;
+            font-size: 1.22rem;
+            font-weight: 600;
+            letter-spacing: -0.03em;
+        }
+        .news-panel-sub {
+            font-size: 0.78rem;
+            color: #6b7280;
+            margin-top: 6px;
+        }
+        .news-live-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #00ffa3;
+            letter-spacing: 0.06em;
+        }
+        .news-live-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #00ffa3;
+            box-shadow: 0 0 10px rgba(0,255,163,0.6);
+            animation: blink 2s ease-in-out infinite;
+        }
+        .news-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 18px 18px;
+        }
+        .news-scroll::-webkit-scrollbar { width: 6px; }
+        .news-scroll::-webkit-scrollbar-track { background: #111; }
+        .news-scroll::-webkit-scrollbar-thumb { background: #3d4451; border-radius: 4px; }
+        .news-item {
+            margin-bottom: 14px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .news-item:last-child { border-bottom: none; }
+        .news-link {
+            text-decoration: none;
+            display: block;
+            transition: opacity 0.15s ease;
+        }
+        .news-link:hover { opacity: 0.88; }
+        .news-footer-hint {
+            flex-shrink: 0;
+            padding: 10px 16px;
+            text-align: center;
+            font-size: 0.68rem;
+            color: #4b5563;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            background: rgba(0,0,0,0.2);
+        }
+
+        /* 메인 히어로 타이틀 · 섹션 리듬 */
+        .page-hero {
+            text-align: center;
+            margin-bottom: var(--section-gap);
+            padding-bottom: 1.15rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .page-hero-title {
+            margin: 0;
+            color: #f9fafb !important;
+            font-size: clamp(1.35rem, 2.2vw, 1.75rem);
+            font-weight: 600;
+            letter-spacing: -0.035em;
+            line-height: 1.25;
+        }
+        .page-hero-badge {
+            display: inline-block;
+            font-size: 0.55em;
+            vertical-align: middle;
+            margin-left: 6px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.07);
+            color: #9ca3af !important;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+        }
+        section[data-testid="stMain"] h2,
+        section[data-testid="stMain"] h3,
+        div[data-testid="stHeadingContainer"] h2,
+        div[data-testid="stHeadingContainer"] h3,
+        div[data-testid="stMarkdownContainer"] h2,
+        div[data-testid="stMarkdownContainer"] h3 {
+            font-size: 1.05rem !important;
+            font-weight: 600 !important;
+            color: #e5e7eb !important;
+            letter-spacing: -0.02em !important;
+            margin-top: 0.25rem !important;
+            margin-bottom: 0.35rem !important;
+        }
+        .stCaption, div[data-testid="stCaptionContainer"] {
+            color: #9ca3af !important;
+            font-size: 0.82rem !important;
+        }
+        hr {
+            margin: 1.15rem 0 !important;
+            border: none !important;
+            border-top: 1px solid var(--border-subtle) !important;
+            background: none !important;
+        }
+
+        /* DataFrame / 테이블 (전역 톤) */
+        [data-testid="stDataFrame"] {
+            border: 1px solid var(--border-subtle) !important;
+            border-radius: 10px !important;
+            overflow: hidden !important;
+        }
+        [data-testid="stDataFrame"] [data-testid="stTable"] th {
+            background-color: #1e2329 !important;
+            color: #e5e7eb !important;
+            font-weight: 600 !important;
+            font-size: 0.8rem !important;
+            padding: 0.65rem 0.5rem !important;
+            border-color: rgba(255,255,255,0.06) !important;
+        }
+        [data-testid="stDataFrame"] [data-testid="stTable"] td {
+            font-size: 0.86rem !important;
+            color: #d1d5db !important;
+            border-color: rgba(255,255,255,0.05) !important;
+            padding: 0.55rem 0.5rem !important;
+        }
+        [data-testid="stDataFrame"] [data-testid="stTable"] tr:hover td {
+            background-color: rgba(255,255,255,0.03) !important;
+        }
+
+        /* 탭 */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 6px;
+            background: transparent !important;
+        }
+        button[data-baseweb="tab"] {
+            border-radius: 8px 8px 0 0 !important;
+            font-weight: 500 !important;
+            font-size: 0.88rem !important;
+        }
+
         /* Sidebar Fix */
-        section[data-testid="stSidebar"] { background-color: #16181C !important; }
+        section[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #14161c 0%, #16181C 100%) !important;
+            border-right: 1px solid var(--border-subtle) !important;
+        }
         section[data-testid="stSidebar"] * { color: #E0E0E0 !important; }
         section[data-testid="stSidebar"] button { color: white !important; }
+        section[data-testid="stSidebar"] h1,
+        section[data-testid="stSidebar"] h2,
+        section[data-testid="stSidebar"] h3 {
+            font-weight: 600 !important;
+            letter-spacing: -0.02em !important;
+        }
+        section[data-testid="stSidebar"] h2 { font-size: 0.95rem !important; color: #d1d5db !important; }
+        section[data-testid="stSidebar"] .stMarkdown h3 { font-size: 1rem !important; }
         
         .stMarkdown, .stText, p, h1, h2, h3, h4, h5, h6 { color: #E0E0E0 !important; }
         
@@ -167,7 +357,7 @@ def apply_custom_styles():
             .metric-card { width: 100% !important; margin-bottom: 5px; padding: 10px; }
             h1 { font-size: 1.4em !important; text-shadow: none !important; }
             h2 { font-size: 1.1em !important; }
-            .news-container { height: 400px; margin-top: 15px; }
+            .news-panel-wrap { height: 420px !important; margin-top: 15px; }
             /* Force DataFrame to scroll horizontally */
             .stDataFrame { display: block; overflow-x: auto; white-space: nowrap; }
             /* Hide non-essential elements if needed, but scrolling is better */
@@ -341,13 +531,18 @@ if is_real_mode:
         else:
             st.info("실제모드에서 거래소와 연결하려면 **연동 테스트**를 통과해야 합니다.")
 
-st.markdown(f"""
-<div style='text-align: center; margin-bottom: 30px;'>
-    <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
-        🔥 급등 전조 탐지 대시보드 <span style='color: #00FFA3'>SHS</span> <span style='font-size:0.5em; background:#333; padding:5px; border-radius:5px;'>({datetime.now().strftime('%H:%M')})</span>
+st.markdown(
+    f"""
+<div class="page-hero">
+    <h1 class="page-hero-title">
+        🔥 급등 전조 탐지 대시보드
+        <span style="color:#00FFA3;">SHS</span>
+        <span class="page-hero-badge">{datetime.now().strftime('%H:%M')}</span>
     </h1>
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 def get_exchange(market_type: str = "spot") -> ccxt.Exchange:
@@ -618,15 +813,22 @@ def scan_breakout(
 URGENT_KEYWORDS = ["상장", "해킹", "유의", "폐지", "폭락", "SEC", "공격", "중단"]
 
 def display_news_with_filter():
-    # 1. 뉴스 컨테이너 시작 (Glassmorphism 스타일 - Indentation Safe using dedent)
+    """우측 패널: 실시간 뉴스 (RSS)."""
     news_html = textwrap.dedent("""
-    <div style='background: linear-gradient(145deg, #1e1e1e, #16181c); 
-                padding: 20px; border-radius: 15px; border: 1px solid #333; 
-                height: 750px; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.5);'>
-        <div style='display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;'>
-            <h3 style='margin:0; color: #00FFA3; font-size: 1.2em;'>📡 LIVE TERMINAL</h3>
-            <span style='color: #FF0055; font-size: 0.8em; font-weight: bold; animation: blink 1.5s infinite;'>● LIVE</span>
+    <div class="news-panel-wrap">
+        <div class="news-panel-header">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                <div>
+                    <div class="news-panel-kicker">Market Intelligence</div>
+                    <h3 class="news-panel-title">실시간 뉴스</h3>
+                    <div class="news-panel-sub">외부 RSS 피드 · 반영 지연 가능</div>
+                </div>
+                <div style="padding-top:4px;">
+                    <span class="news-live-pill"><span class="news-live-dot"></span>LIVE</span>
+                </div>
+            </div>
         </div>
+        <div class="news-scroll">
     """)
     
     # 2. 데이터 가져오기 (RSS 활용 - Feedparser 요청 반영)
@@ -641,29 +843,31 @@ def display_news_with_filter():
         
         for entry in feed.entries[:20]:
             title = entry.title
-            link = entry.link
-            
+            link = entry.link or "#"
+            safe_title = html_escape.escape(str(title))
+            safe_link = html_escape.escape(str(link), quote=True)
+
             # 시간 추출 (published가 있으면 사용, 없으면 N/A)
-            pubDate = "N/A"
-            if hasattr(entry, 'published') and len(entry.published) > 20:
+            pubDate = "—"
+            if hasattr(entry, 'published') and entry.published and len(str(entry.published)) > 20:
                  pubDate = entry.published[17:22] # HH:MM
             
             # 긴급 키워드 강조
             is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
             
             badge_class = "badge-danger" if is_urgent else "badge-info"
-            badge_text = "긴급" if is_urgent else "뉴스"
-            title_color = "#FF0055" if is_urgent else "#E0E0E0"
-            font_weight = "bold" if is_urgent else "normal"
+            badge_text = "긴급" if is_urgent else "일반"
+            title_color = "#ff6b8a" if is_urgent else "#d1d5db"
+            font_weight = "600" if is_urgent else "400"
 
             news_html += textwrap.dedent(f"""
-            <div style='margin-bottom: 16px; border-bottom: 1px solid #2a2a2a; padding-bottom: 10px;'>
+            <div class="news-item">
                 <div style='display: flex; align-items: center; gap: 8px; margin-bottom: 6px;'>
-                    <span class='badge {badge_class}' style='font-size: 0.7em;'>{badge_text}</span>
-                    <span style='font-size: 0.8em; color: #666;'>{pubDate}</span>
+                    <span class='badge {badge_class}' style='font-size: 0.65em;'>{badge_text}</span>
+                    <span style='font-size: 0.72rem; color: #6b7280; font-variant-numeric: tabular-nums;'>{pubDate}</span>
                 </div>
-                <a href='{link}' target='_blank' style='text-decoration: none;'>
-                    <span style='color: {title_color}; font-weight: {font_weight}; line-height: 1.4;'>{title}</span>
+                <a class="news-link" href="{safe_link}" target="_blank" rel="noopener noreferrer">
+                    <span style='color: {title_color}; font-weight: {font_weight}; line-height: 1.45; font-size: 0.9rem;'>{safe_title}</span>
                 </a>
             </div>
             """)
@@ -679,25 +883,28 @@ def display_news_with_filter():
                 for item in items[:20]:
                     title = item.find("title").text.strip()
                     link = item.find("link").text.strip()
-                    # Date
+                    safe_title = html_escape.escape(str(title))
+                    safe_link = html_escape.escape(str(link), quote=True)
                     pubDate = ""
                     p_tag = item.find("pubDate") or item.find("pubdate")
                     if p_tag: pubDate = p_tag.text[17:22]
-                    
+                    if not pubDate:
+                        pubDate = "—"
+
                     is_urgent = any(kw in title for kw in URGENT_KEYWORDS)
                     badge_class = "badge-danger" if is_urgent else "badge-info"
-                    badge_text = "긴급" if is_urgent else "뉴스"
-                    title_color = "#FF0055" if is_urgent else "#E0E0E0" 
-                    font_weight = "bold" if is_urgent else "normal"
-                    
+                    badge_text = "긴급" if is_urgent else "일반"
+                    title_color = "#ff6b8a" if is_urgent else "#d1d5db"
+                    font_weight = "600" if is_urgent else "400"
+
                     news_html += f"""
-                    <div style='margin-bottom: 16px; border-bottom: 1px solid #2a2a2a; padding-bottom: 10px;'>
+                    <div class="news-item">
                         <div style='display: flex; align-items: center; gap: 8px; margin-bottom: 6px;'>
-                            <span class='badge {badge_class}' style='font-size: 0.7em;'>{badge_text}</span>
-                            <span style='font-size: 0.8em; color: #666;'>{pubDate}</span>
+                            <span class='badge {badge_class}' style='font-size: 0.65em;'>{badge_text}</span>
+                            <span style='font-size: 0.72rem; color: #6b7280; font-variant-numeric: tabular-nums;'>{pubDate}</span>
                         </div>
-                        <a href='{link}' target='_blank' style='text-decoration: none;'>
-                            <span style='color: {title_color}; font-weight: {font_weight}; line-height: 1.4;'>{title}</span>
+                        <a class="news-link" href="{safe_link}" target="_blank" rel="noopener noreferrer">
+                            <span style='color: {title_color}; font-weight: {font_weight}; line-height: 1.45; font-size: 0.9rem;'>{safe_title}</span>
                         </a>
                     </div>
                     """
@@ -706,8 +913,13 @@ def display_news_with_filter():
         except Exception as e2:
              news_html += f"<div style='color:#FF0055;'>연결 오류 (All Failed): {str(e)} / {str(e2)}</div>"
 
-    # [FIX] HTML Indentation Bug: Use single line or dedent properly
-    news_html += "<h5 style='margin-top: 30px; color: #555; border-top: 1px dashed #333; padding-top: 15px; text-align:center;'>🌍 GLOBAL FEED ACTIVE</h5></div>"
+    news_html += """
+        </div>
+        <div class="news-footer-hint">
+            RSS · Investing.com 등 외부 출처 · 투자 판단은 본인 책임 · 정보 지연·누락 가능
+        </div>
+    </div>
+    """
     st.markdown(news_html, unsafe_allow_html=True)
 
 with st.sidebar:
@@ -1046,7 +1258,7 @@ col_main, col_news = st.columns([0.7, 0.3])
 
 # 우측 뉴스 피드 (HTML Container 로 변경)
 with col_news:
-    display_news_with_filter()  # 함수 내부도 수정 필요
+    display_news_with_filter()
 
 # 좌측 메인 차트/스캔 영역 (Card 적용)
 with col_main:
