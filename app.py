@@ -927,7 +927,7 @@ def scan_breakout(
         detected = bool(is_squeeze and is_vol_spike and is_rsi_bullish and is_wpr_recover)
         return detected, bandwidth, rsi_val, wpr_val, "", float(latest["close"])
     except Exception as e:
-        return False, 0.0, 0.0, 0.0, str(e), 0.0
+        return False, 0.0, 0.0, 0.0, user_friendly_exchange_error(e, market_type), 0.0
 
 # 1. 강조할 긴급 키워드 설정
 URGENT_KEYWORDS = ["상장", "해킹", "유의", "폐지", "폭락", "SEC", "공격", "중단"]
@@ -1665,7 +1665,7 @@ try:
             text=f"{progress_text} ({i + 1}/{len(top_symbols)})",
         )
 except Exception as e:
-    col_main.error(f"❌ 치명적 오류 발생: {str(e)}")
+    col_main.error(f"❌ 치명적 오류 발생: {user_friendly_exchange_error(e, market_type)}")
     col_main.code(traceback.format_exc())
 
 if debug_mode and errors:
