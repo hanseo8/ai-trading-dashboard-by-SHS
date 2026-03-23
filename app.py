@@ -913,13 +913,16 @@ def display_news_with_filter():
         except Exception as e2:
              news_html += f"<div style='color:#FF0055;'>연결 오류 (All Failed): {str(e)} / {str(e2)}</div>"
 
-    news_html += """
+    # st.markdown 은 Markdown 전처리를 하므로, 줄 앞 공백 4칸 이상이면 코드 블록으로 깨져 HTML 이 그대로 노출됨 → 들여쓰기 제거
+    news_html += textwrap.dedent(
+        """
         </div>
         <div class="news-footer-hint">
             RSS · Investing.com 등 외부 출처 · 투자 판단은 본인 책임 · 정보 지연·누락 가능
         </div>
-    </div>
-    """
+        </div>
+        """
+    ).strip()
     st.markdown(news_html, unsafe_allow_html=True)
 
 with st.sidebar:
@@ -928,9 +931,94 @@ with st.sidebar:
     portfolio_label = "급등 전조 탐지"
     st.markdown("### 🔥 급등 전조 탐지 (단일 전략)")
 
+    # 운용 모드 표시 (메인 상단과 동일 기준)
+    if execution_mode == "practice":
+        st.info("**연습모드** · 모의 포트폴리오·가상 손익")
+    else:
+        st.warning("**실제모드** · 실계좌·API는 상단 패널에서 연동")
+        if st.session_state.get("binance_api_ok"):
+            st.caption("API 연결됨 — 잔고 조회 가능")
+        else:
+            st.caption("API 미연동 시 시세·스캔만 공개 데이터로 동작")
+
+    _mt_side = "현물" if market_type == "spot" else "USDT-M 선물"
+    st.caption(f"마켓: **{_mt_side}** (상단 라디오와 동일)")
+
     st.divider()
-    st.subheader("모의 매매 (선택)")
-    use_paper = st.checkbox("모의 매매 사용", value=False, key="use_paper_breakout")
+
+    # --- 필수: 타임프레임 + RSI + Williams %R ---
+    st.subheader("필수 · 탐지 조건")
+    st.caption("스캔·상세 차트·RSI/WPR 기준선에 동일 적용 (15m / 1h / 4h).")
+    _tf_allowed = ("15m", "1h", "4h")
+    _tf_key = "breakout_timeframe_sidebar"
+    if st.session_state.get(_tf_key) not in _tf_allowed:
+        st.session_state[_tf_key] = "15m"
+    breakout_timeframe = st.selectbox(
+        "탐지 타임프레임",
+        list(_tf_allowed),
+        index=0,
+        key=_tf_key,
+        help="급등 전조 로직에 쓰는 봉 단위입니다.",
+    )
+    breakout_limit = st.slider(
+        "탐지 캔들 수",
+        min_value=50,
+        max_value=200,
+        value=80,
+        step=10,
+        key="breakout_limit_sidebar",
+    )
+    breakout_rsi_threshold = st.slider(
+        "RSI 기준값",
+        min_value=20,
+        max_value=80,
+        value=35,
+        step=1,
+        key="breakout_rsi_threshold",
+        help="종가 RSI가 이 값을 넘으면 조건에 반영됩니다.",
+    )
+    breakout_wpr_threshold = st.slider(
+        "Williams %R 기준값",
+        min_value=-95,
+        max_value=-50,
+        value=-85,
+        step=1,
+        key="breakout_wpr_threshold",
+        help="WPR이 이 값보다 커야 조건에 반영됩니다.",
+    )
+    st.caption("상세 Plotly 차트의 RSI/WPR 기준선도 위 값으로 즉시 반영됩니다.")
+
+    st.divider()
+
+    # 익절·손절 (전략 공통 — 모의 청산 / 실제는 옵션에 따라)
+    if execution_mode == "practice":
+        st.subheader("익절 / 손절 (모의 청산)")
+        st.caption("모의 포지션 자동 매도 시 적용할 %입니다.")
+    else:
+        st.subheader("익절 / 손절 (전략 %)")
+        st.caption("모의 매매 시 가상 청산 기준. 실거래 자동주문은 별도 옵션·검증 후 적용.")
+    breakout_tp = st.slider("익절 (%)", 0.3, 10.0, 1.25, 0.05, key="tp_breakout_only")
+    breakout_sl = st.slider("손절 (%)", 0.3, 10.0, 0.8, 0.05, key="sl_breakout_only")
+
+    st.divider()
+
+    # 모의 자금·주문 크기
+    if execution_mode == "practice":
+        st.subheader("모의 매매")
+        use_paper = st.checkbox(
+            "모의 매매 사용 (자동 매수·매도)",
+            value=False,
+            key="use_paper_breakout",
+        )
+    else:
+        st.subheader("매매·포지션 크기")
+        use_paper = st.checkbox(
+            "모의 포트폴리오 사용 (실계좌와 병행 시뮬)",
+            value=False,
+            key="use_paper_breakout",
+            help="실제모드에서도 가상 잔고로만 시뮬하려면 켜세요. 실주문은 상단 실거래 옵션과 별개입니다.",
+        )
+
     paper_cash = st.number_input(
         "모의 자금 (USDT)",
         min_value=0.0,
@@ -946,6 +1034,9 @@ with st.sidebar:
         pt.save_portfolio(pf_cash, portfolio_file)
         st.success("모의 자금이 반영되었습니다.")
         st.rerun()
+
+    _ta_label = "1회 증거금·마진 (USDT)" if market_type == "future" else "1회 매수 금액 (USDT)"
+    trade_amount = st.slider(_ta_label, 100.0, 5000.0, 5000.0, 100.0, key="trade_amt_breakout")
 
     if market_type == "future":
         st.divider()
@@ -971,49 +1062,9 @@ with st.sidebar:
         futures_leverage = 1
 
     st.divider()
-    st.subheader("익절 / 손절 (모의)")
-    breakout_tp = st.slider("익절 (%)", 0.3, 10.0, 1.25, 0.05, key="tp_breakout_only")
-    breakout_sl = st.slider("손절 (%)", 0.3, 10.0, 0.8, 0.05, key="sl_breakout_only")
-    _ta_label = "1회 증거금·마진 (USDT)" if market_type == "future" else "1회 매수 금액 (USDT)"
-    trade_amount = st.slider(_ta_label, 100.0, 5000.0, 5000.0, 100.0, key="trade_amt_breakout")
-
-    st.divider()
-    top_n = st.slider("스캔 개수 (거래량 상위)", min_value=5, max_value=50, value=20, step=5)
+    st.subheader("스캔 범위")
+    top_n = st.slider("거래량 상위 종목 수", min_value=5, max_value=50, value=20, step=5)
     st.caption("데이터는 바이낸스 공개 시세(지연/누락 가능).")
-
-    st.divider()
-    st.subheader("🔥 급등 전조 탐지 파라미터")
-    breakout_timeframe = st.selectbox(
-        "탐지 타임프레임",
-        ["5m", "15m", "1h"],
-        index=1,
-        key="breakout_timeframe_sidebar",
-    )
-    breakout_limit = st.slider(
-        "탐지 캔들 수",
-        min_value=50,
-        max_value=200,
-        value=80,
-        step=10,
-        key="breakout_limit_sidebar",
-    )
-    breakout_rsi_threshold = st.slider(
-        "RSI 기준값 (기본 30 -> 35)",
-        min_value=20,
-        max_value=80,
-        value=35,
-        step=1,
-        key="breakout_rsi_threshold",
-    )
-    breakout_wpr_threshold = st.slider(
-        "Williams %R 기준값 (기본 -78 -> -85)",
-        min_value=-95,
-        max_value=-50,
-        value=-85,
-        step=1,
-        key="breakout_wpr_threshold",
-    )
-    st.caption("아래 상세 Plotly 차트의 RSI/WPR 기준선도 이 값으로 즉시 반영됩니다.")
 
     if st.button("🚀 급등 전조 스캔", key="scan_breakout_btn_sidebar", use_container_width=True):
         raw_syms = (
