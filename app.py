@@ -139,6 +139,24 @@ st.markdown(f"<!-- Cache Buster: {datetime.now(timezone.utc)} -->", unsafe_allow
 
 apply_custom_styles()
 
+# ---------------------------------------------------------------------------
+# 최상단: 현물 / 선물(USDT-M) — 시세·스캔·차트·모의매매 심볼 형식과 연동
+# ---------------------------------------------------------------------------
+_mkt_row = st.columns([0.12, 0.76, 0.12])
+with _mkt_row[1]:
+    _mt_label = st.radio(
+        "거래 마켓",
+        ["현물 (Spot)", "선물 (USDT-M)"],
+        horizontal=True,
+        key="app_market_type_radio",
+        help=(
+            "**현물**: 공개 시세(data-api.binance.vision) 우회, 지연 가능. "
+            "**선물**: USDT 무기한 — 심볼은 `BTC/USDT:USDT` 형식. 일부 지역에서 API(451) 차단될 수 있습니다."
+        ),
+    )
+market_type: str = "spot" if _mt_label.startswith("현물") else "future"
+st.session_state["market_type"] = market_type
+
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
     <h1 style='color: #FFF; text-shadow: 0 0 10px rgba(255,255,255,0.3);'>
@@ -147,36 +165,79 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-def get_exchange() -> ccxt.Exchange:
-    ex = ccxt.binance({
+
+def get_exchange(market_type: str = "spot") -> ccxt.Exchange:
+    """현물: 공개 시세 호스트 우회. 선물: USDT-M(기본 fapi, 지역 제한 가능)."""
+    if market_type == "future":
+        return ccxt.binance({
+            "enableRateLimit": True,
+            "options": {
+                "defaultType": "future",
+                "adjustForTimeDifference": True,
+            },
+            "timeout": 30000,
+        })
+    return ccxt.binance({
         "enableRateLimit": True,
         "options": {
-            "defaultType": "spot", # 현물 시장 명시
-            "adjustForTimeDifference": True, # 시간 동기화 에러 방지
+            "defaultType": "spot",
+            "adjustForTimeDifference": True,
         },
         "urls": {
             "api": {
                 "public": "https://data-api.binance.vision/api/v3",
-                "fapiPublic": "https://data-api.binance.vision/api/v3", # 퓨처스 접속 차단 (우회)
-                "fapi": "https://data-api.binance.vision/api/v3",       # 퓨처스 접속 차단 (우회)
-                "dapiPublic": "https://data-api.binance.vision/api/v3", # 코인 퓨처스 차단 (우회)
-                "dapi": "https://data-api.binance.vision/api/v3",       # 코인 퓨처스 차단 (우회)
+                "fapiPublic": "https://data-api.binance.vision/api/v3",
+                "fapi": "https://data-api.binance.vision/api/v3",
+                "dapiPublic": "https://data-api.binance.vision/api/v3",
+                "dapi": "https://data-api.binance.vision/api/v3",
             }
         },
-        "timeout": 30000, # 응답 대기 시간 연장
+        "timeout": 30000,
     })
-    return ex
+
+
+@st.cache_data(ttl=3600)
+def filter_binance_symbols(symbols: Tuple[str, ...], market_type: str) -> list[str]:
+    """선택한 마켓(ccxt markets)에 존재하는 심볼만 반환."""
+    try:
+        ex = get_exchange(market_type)
+        ex.load_markets()
+        return [s for s in symbols if s in ex.markets]
+    except Exception:
+        return list(symbols)
+
+
+# 사이드바 '급등 전조 스캔' 고정 후보 (미지원은 filter 에서 제외)
+SIDEBAR_BREAKOUT_SCAN_SYMBOLS_SPOT: Tuple[str, ...] = (
+    "BTC/USDT",
+    "ETH/USDT",
+    "ACX/USDT",
+    "PIXEL/USDT",
+    "SOL/USDT",
+)
+SIDEBAR_BREAKOUT_SCAN_SYMBOLS_FUTURE: Tuple[str, ...] = (
+    "BTC/USDT:USDT",
+    "ETH/USDT:USDT",
+    "SOL/USDT:USDT",
+    "XRP/USDT:USDT",
+    "DOGE/USDT:USDT",
+)
 
 
 @st.cache_data(ttl=30)
-def fetch_tickers() -> dict:
-    ex = get_exchange()
+def fetch_tickers(market_type: str) -> dict:
+    ex = get_exchange(market_type)
     return ex.fetch_tickers()
 
 
 @st.cache_data(ttl=60)
-def get_data(symbol: str, timeframe: str = "1h", limit: int = 200) -> Optional[pd.DataFrame]:
-    ex = get_exchange()
+def get_data(
+    symbol: str,
+    timeframe: str = "1h",
+    limit: int = 200,
+    market_type: str = "spot",
+) -> Optional[pd.DataFrame]:
+    ex = get_exchange(market_type)
     try:
         ohlcv = ex.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
@@ -283,12 +344,17 @@ def _bbands_column_triplet(bb_df: Optional[pd.DataFrame]) -> Tuple[Optional[str]
 
 
 @st.cache_resource
-def get_breakout_exchange() -> ccxt.Exchange:
-    """급등 전조 탐지: 공개 시세 전용 호스트(data-api.binance.vision)로 451(지역 차단) 우회.
-
-    기본 api.binance.com 은 일부 국가/클라우드 IP 에서 451 을 반환합니다.
-    현물 OHLCV 를 사용합니다(USDT 마켓, 메인 스캔과 동일 경로).
-    """
+def get_breakout_exchange(market_type: str = "spot") -> ccxt.Exchange:
+    """급등 전조 탐지용 거래소. 현물은 vision 우회, 선물은 USDT-M fapi."""
+    if market_type == "future":
+        return ccxt.binance({
+            "enableRateLimit": True,
+            "options": {
+                "defaultType": "future",
+                "adjustForTimeDifference": True,
+            },
+            "timeout": 30000,
+        })
     return ccxt.binance({
         "enableRateLimit": True,
         "options": {
@@ -314,10 +380,11 @@ def scan_breakout(
     limit: int = 50,
     rsi_threshold: float = 50.0,
     wpr_threshold: float = -85.0,
+    market_type: str = "spot",
 ):
     """볼린저 밴드 수축 + 거래량 스파이크 + RSI/WPR 조건 탐지"""
     try:
-        exchange = get_breakout_exchange()
+        exchange = get_breakout_exchange(market_type)
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
 
@@ -529,7 +596,18 @@ with st.sidebar:
     st.caption("아래 상세 Plotly 차트의 RSI/WPR 기준선도 이 값으로 즉시 반영됩니다.")
 
     if st.button("🚀 급등 전조 스캔", key="scan_breakout_btn_sidebar", use_container_width=True):
-        tickers = ["BTC/USDT", "ETH/USDT", "ACX/USDT", "PIXEL/USDT", "RIVER/USDT"]
+        raw_syms = (
+            SIDEBAR_BREAKOUT_SCAN_SYMBOLS_FUTURE
+            if market_type == "future"
+            else SIDEBAR_BREAKOUT_SCAN_SYMBOLS_SPOT
+        )
+        tickers = filter_binance_symbols(raw_syms, market_type)
+        skipped = [s for s in raw_syms if s not in tickers]
+        if skipped:
+            st.caption(f"💡 바이낸스 마켓 미지원·제외: {', '.join(skipped)}")
+        if not tickers:
+            st.error("스캔할 심볼이 없습니다. 네트워크·마켓 선택(현물/선물) 또는 거래소 연결을 확인하세요.")
+            st.stop()
         breakout_rows = []
 
         for ticker in tickers:
@@ -539,6 +617,7 @@ with st.sidebar:
                 limit=breakout_limit,
                 rsi_threshold=float(breakout_rsi_threshold),
                 wpr_threshold=float(breakout_wpr_threshold),
+                market_type=market_type,
             )
             breakout_rows.append({
                 "종목": ticker,
@@ -656,7 +735,7 @@ _missing_px = [
 ]
 if _missing_px:
     try:
-        _ex_pf = get_exchange()
+        _ex_pf = get_exchange(market_type)
         _tk = _ex_pf.fetch_tickers(_missing_px)
         for _sym, _t in _tk.items():
             _last = _t.get("last") or _t.get("close")
@@ -745,7 +824,8 @@ with tab_history_top:
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-st.caption(f"현재 모드: {portfolio_mode} (단일 전략)")
+_mt_label_short = "현물" if market_type == "spot" else "USDT-M 선물"
+st.caption(f"현재 모드: {portfolio_mode} (단일 전략) · 마켓: {_mt_label_short}")
 st.divider()
 
 # 레이아웃 구성 (7:3)
@@ -758,17 +838,27 @@ with col_news:
 # 좌측 메인 차트/스캔 영역 (Card 적용)
 with col_main:
     st.markdown('<div class="stCard">', unsafe_allow_html=True) # 카드 시작
-    st.subheader(f"🔥 급등 전조 탐지 스캔 (USDT / 거래량 상위 {top_n}개)")
+    _mt_tag = "현물" if market_type == "spot" else "USDT-M 선물"
+    st.subheader(f"🔥 급등 전조 탐지 스캔 ({_mt_tag} / 거래량 상위 {top_n}개)")
 
 # 기존 try-except 문을 아래처럼 수정해서 에러 내용을 확인합니다.
 try:
-    markets = fetch_tickers()
+    markets = fetch_tickers(market_type)
 except Exception as e:
     col_main.error(f"바이낸스 연결 실패: {str(e)}") # 어떤 에러인지 정확히 보여줍니다.
-    col_main.info("💡 팁: VPN을 사용 중이라면 끄거나, 반대로 인터넷 환경이 불안정하면 다른 와이파이/핫스팟으로 시도해 보세요.")
+    col_main.info(
+        "💡 팁: VPN/네트워크를 바꿔 보세요. **선물** 선택 시 일부 지역에서 API(451) 차단될 수 있습니다 — **현물**로 전환해 보세요."
+    )
     st.stop()
 
-symbols = [s for s in markets.keys() if isinstance(s, str) and s.endswith("/USDT")]
+if market_type == "spot":
+    symbols = [
+        s
+        for s in markets.keys()
+        if isinstance(s, str) and s.endswith("/USDT") and ":" not in s
+    ]
+else:
+    symbols = [s for s in markets.keys() if isinstance(s, str) and s.endswith(":USDT")]
 top_symbols = sorted(symbols, key=lambda x: safe_quote_volume(markets, x), reverse=True)[: int(top_n)]
 
 # BTC 추세 확인 (User Request: Remove Banner)
@@ -792,27 +882,8 @@ top_symbols = sorted(symbols, key=lambda x: safe_quote_volume(markets, x), rever
 
 current_prices = {}
 
-# [SPEED FIX] 전역 Exchange 인스턴스 (재사용)
-# 매번 생성하면 SSL 핸드쉐이크 등으로 인해 3~5배 느려짐.
-# 순차 처리 모드이므로 전역 객체 사용이 안전함.
-safe_exchange = ccxt.binance({
-    'enableRateLimit': True,
-    'options': {
-        'defaultType': 'spot', 
-        'adjustForTimeDifference': True
-    },
-    'urls': {
-        'api': {
-            'public': 'https://data-api.binance.vision/api/v3',
-            'fapiPublic': 'https://data-api.binance.vision/api/v3',
-            'fapi': 'https://data-api.binance.vision/api/v3',
-            'dapiPublic': 'https://data-api.binance.vision/api/v3',
-            'dapi': 'https://data-api.binance.vision/api/v3',
-        }
-    },
-    'timeout': 10000 
-})
-exchange = safe_exchange # [FIX] NameError 방지용 별칭 (여기서 정의해야 함)
+# 선택 마켓과 동일한 거래소 인스턴스 (호가·모의 매수)
+exchange = get_exchange(market_type)
 
 import traceback
 
@@ -832,6 +903,7 @@ try:
             limit=breakout_limit,
             rsi_threshold=float(breakout_rsi_threshold),
             wpr_threshold=float(breakout_wpr_threshold),
+            market_type=market_type,
         )
         if err:
             errors.append(f"{symbol}: {err}")
@@ -976,7 +1048,12 @@ if df_all.empty:
     # 여기서는 안내 문구만 수정
 else:
     selected_coin = col_main.selectbox("상세 차트 분석", df_all["종목"].tolist())
-    df_chart = get_data(selected_coin, timeframe=breakout_timeframe, limit=300)
+    df_chart = get_data(
+        selected_coin,
+        timeframe=breakout_timeframe,
+        limit=300,
+        market_type=market_type,
+    )
     if df_chart is None:
         col_main.error("해당 종목의 차트 데이터를 불러오지 못했습니다.")
     else:
