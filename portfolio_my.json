@@ -1,5 +1,21 @@
 {
-    "balance": 50000.0,
-    "holdings": {},
-    "trades": []
+    "balance": 49000.0,
+    "holdings": {
+        "TRX/USDT": {
+            "amount": 3215.434083601286,
+            "avg_price": 0.311,
+            "total_cost": 1000.0
+        }
+    },
+    "trades": [],
+    "history": [
+        {
+            "time": "2026-03-23 08:46:23",
+            "type": "buy",
+            "symbol": "TRX/USDT",
+            "price": 0.311,
+            "invest": 1000.0,
+            "amount": 3215.434083601286
+        }
+    ]
 }

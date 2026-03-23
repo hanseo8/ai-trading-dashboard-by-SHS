@@ -4,7 +4,7 @@ import pandas as pd
 import pandas_ta as ta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import time
 import math
@@ -134,7 +134,7 @@ apply_custom_styles()
 # [DEBUG] Canary: Import Check
 # -----------------------------------------------------------------------------
 # CACHE BUSTING: Force Reload
-st.markdown(f"<!-- Cache Buster: {datetime.utcnow()} -->", unsafe_allow_html=True)
+st.markdown(f"<!-- Cache Buster: {datetime.now(timezone.utc)} -->", unsafe_allow_html=True)
 
 apply_custom_styles()
 
@@ -269,6 +269,66 @@ def get_best_bid(_exchange, symbol):
         return orderbook["bids"][0][0]
     except:
         return None
+
+
+@st.cache_resource
+def get_breakout_exchange() -> ccxt.Exchange:
+    """급등 전조 탐지 전용: 바이낸스 선물 객체 생성"""
+    return ccxt.binance({
+        "enableRateLimit": True,
+        "options": {"defaultType": "future", "adjustForTimeDifference": True},
+        "timeout": 15000,
+    })
+
+
+def scan_breakout(
+    symbol: str,
+    timeframe: str = "15m",
+    limit: int = 50,
+    rsi_threshold: float = 50.0,
+    wpr_threshold: float = -85.0,
+):
+    """볼린저 밴드 수축 + 거래량 스파이크 + RSI/WPR 조건 탐지"""
+    try:
+        exchange = get_breakout_exchange()
+        ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+        df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+
+        if df.empty:
+            return False, 0.0, 0.0, 0.0, "데이터 없음"
+
+        df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(float)
+
+        bb = ta.bbands(df["close"], length=20, std=2.0)
+        df = pd.concat([df, bb], axis=1)
+        df["rsi14"] = ta.rsi(df["close"], length=14)
+        df["wpr14"] = ta.willr(df["high"], df["low"], df["close"], length=14)
+        df["vol_ma20"] = df["volume"].rolling(window=20).mean()
+        df = df.dropna().reset_index(drop=True)
+
+        if df.empty:
+            return False, 0.0, 0.0, 0.0, "지표 계산 데이터 부족"
+
+        latest = df.iloc[-1]
+        bb_upper = latest.get("BBU_20_2.0")
+        bb_lower = latest.get("BBL_20_2.0")
+        bb_mid = latest.get("BBM_20_2.0")
+        rsi_val = float(latest.get("rsi14", 0.0))
+        wpr_val = float(latest.get("wpr14", -100.0))
+
+        if pd.isna(bb_upper) or pd.isna(bb_lower) or pd.isna(bb_mid) or bb_mid == 0:
+            return False, 0.0, rsi_val, wpr_val, "볼린저 밴드 계산 실패"
+
+        bandwidth = float((bb_upper - bb_lower) / bb_mid)
+        is_squeeze = bandwidth < 0.05
+        is_vol_spike = bool(latest["volume"] > (latest["vol_ma20"] * 3))
+        is_rsi_bullish = rsi_val > rsi_threshold
+        is_wpr_recover = wpr_val > wpr_threshold
+
+        detected = bool(is_squeeze and is_vol_spike and is_rsi_bullish and is_wpr_recover)
+        return detected, bandwidth, rsi_val, wpr_val, ""
+    except Exception as e:
+        return False, 0.0, 0.0, 0.0, str(e)
 
 # 1. 강조할 긴급 키워드 설정
 URGENT_KEYWORDS = ["상장", "해킹", "유의", "폐지", "폭락", "SEC", "공격", "중단"]
@@ -504,6 +564,67 @@ with st.sidebar:
     vol_mult = st.slider("거래량 조건(이동평균 대비 배수)", 1.0, 5.0, default_vol, 0.1, key=f"vol_{strategy_mode}") 
     wpr_level = st.slider("WPR 기준선(과매도 탈출)", -95, -50, default_wpr, 1, key=f"wpr_{strategy_mode}")
     st.caption("데이터는 바이낸스 공개 시세(지연/누락 가능).")
+
+    st.divider()
+    st.subheader("🔥 급등 전조 탐지 설정")
+    breakout_timeframe = st.selectbox(
+        "탐지 타임프레임",
+        ["5m", "15m", "1h"],
+        index=1,
+        key="breakout_timeframe_sidebar",
+    )
+    breakout_limit = st.slider(
+        "탐지 캔들 수",
+        min_value=50,
+        max_value=200,
+        value=80,
+        step=10,
+        key="breakout_limit_sidebar",
+    )
+    breakout_rsi_threshold = st.slider(
+        "RSI 기준값 (기본 30 -> 35)",
+        min_value=20,
+        max_value=80,
+        value=35,
+        step=1,
+        key="breakout_rsi_threshold",
+    )
+    breakout_wpr_threshold = st.slider(
+        "Williams %R 기준값 (기본 -78 -> -85)",
+        min_value=-95,
+        max_value=-50,
+        value=-85,
+        step=1,
+        key="breakout_wpr_threshold",
+    )
+    st.caption("아래 상세 Plotly 차트의 RSI/WPR 기준선도 이 값으로 즉시 반영됩니다.")
+
+    if st.button("🚀 급등 전조 스캔", key="scan_breakout_btn_sidebar", use_container_width=True):
+        tickers = ["BTC/USDT", "ETH/USDT", "ACX/USDT", "PIXEL/USDT", "RIVER/USDT"]
+        breakout_rows = []
+
+        for ticker in tickers:
+            detected, bw, rsi, wpr, err = scan_breakout(
+                ticker,
+                timeframe=breakout_timeframe,
+                limit=breakout_limit,
+                rsi_threshold=float(breakout_rsi_threshold),
+                wpr_threshold=float(breakout_wpr_threshold),
+            )
+            breakout_rows.append({
+                "종목": ticker,
+                "상태": "🚨 탐지" if detected else ("⚠️ 오류" if err else "관망"),
+                "밴드폭": bw,
+                "RSI": rsi,
+                "WPR": wpr,
+                "오류": err if err else "-",
+            })
+
+        st.session_state["breakout_scan_rows"] = breakout_rows
+        st.session_state["breakout_scan_time"] = datetime.now().strftime("%H:%M:%S")
+        detected_count = sum(1 for r in breakout_rows if r["상태"] == "🚨 탐지")
+        st.session_state["breakout_detected_count"] = detected_count
+        st.success(f"스캔 완료: {detected_count}/{len(tickers)} 탐지")
     
     st.divider()
     st.subheader("자동 갱신")
@@ -733,7 +854,7 @@ if debug_mode and errors:
     col_main.error(f"스캔 실패 ({len(errors)}개): {errors[:5]}...")
 
 # 결과 처리
-for symbol, df in results:
+for idx, (symbol, df) in enumerate(results):
     last = df.iloc[-1]
     prev = df.iloc[-2]
 
@@ -972,7 +1093,10 @@ for symbol, df in results:
                 if success:
                     print(f"💰 {sell_reason}: {symbol} ({profit_pct:.2f}%)")
 
-    progress_bar.progress(i / len(top_symbols), text=f"스캔 중… ({i}/{len(top_symbols)})")
+    progress_bar.progress(
+        (idx + 1) / max(len(results), 1),
+        text=f"결과 처리 중… ({idx + 1}/{len(results)})",
+    )
 # 스캔 완료 후 프로그레스 바 제거
 progress_bar.empty()
 
@@ -1016,7 +1140,9 @@ else:
 col_main.markdown('<div class="stCard">', unsafe_allow_html=True) 
 
 # Tabs 구성
-tab_holdings, tab_history = col_main.tabs(["💼 보유 종목 (My Wallet)", "📝 매매 기록 (Trade History)"])
+tab_holdings, tab_history = col_main.tabs(
+    ["💼 보유 종목 (My Wallet)", "📝 매매 기록 (Trade History)"]
+)
 
 # [Tab 1] 보유 종목
 with tab_holdings:
@@ -1112,7 +1238,24 @@ with tab_history:
 
         st.dataframe(df_view, use_container_width=True, hide_index=True)
 
+
 col_main.markdown('</div>', unsafe_allow_html=True) # Card End
+
+# 급등 전조 탐지 결과 (사이드바 설정/버튼 연동)
+breakout_rows = st.session_state.get("breakout_scan_rows", [])
+if breakout_rows:
+    col_main.markdown('<div class="stCard">', unsafe_allow_html=True)
+    col_main.subheader("🔥 급등 전조 탐지 결과")
+    scan_time = st.session_state.get("breakout_scan_time", "-")
+    detected_count = st.session_state.get("breakout_detected_count", 0)
+    col_main.caption(f"최근 스캔 시각: {scan_time} | 탐지: {detected_count}/{len(breakout_rows)}")
+
+    df_breakout = pd.DataFrame(breakout_rows)
+    df_breakout["밴드폭"] = df_breakout["밴드폭"].apply(lambda x: f"{x:.3f}")
+    df_breakout["RSI"] = df_breakout["RSI"].apply(lambda x: f"{x:.1f}")
+    df_breakout["WPR"] = df_breakout["WPR"].apply(lambda x: f"{x:.1f}")
+    col_main.dataframe(df_breakout, use_container_width=True, hide_index=True)
+    col_main.markdown('</div>', unsafe_allow_html=True)
 
 with st.sidebar:
     if not enable_lock:
@@ -1137,13 +1280,14 @@ else:
     if df_chart is None:
         col_main.error("해당 종목의 차트 데이터를 불러오지 못했습니다.")
     else:
+        col_main.caption("Plotly 인터랙티브 차트: 마우스 휠로 확대/축소하여 매수 지점을 정밀 분석하세요.")
         fig = make_subplots(
-            rows=2,
+            rows=3,
             cols=1,
             shared_xaxes=True,
-            row_heights=[0.7, 0.3],
+            row_heights=[0.6, 0.2, 0.2],
             vertical_spacing=0.03,
-            subplot_titles=("Price", "RSI(14)"),
+            subplot_titles=("Price", "RSI(14)", "Williams %R(14)"),
         )
 
         fig.add_trace(
@@ -1174,6 +1318,52 @@ else:
             col=1,
         )
 
+        # 실제 매매 기록(선택 전략) 마커 오버레이: 왜 여기서 사졌는지 시각적으로 확인
+        trade_hist = pt.load_portfolio(portfolio_file).get("history", [])
+        buy_x, buy_y, sell_x, sell_y = [], [], [], []
+        for t in trade_hist:
+            if t.get("symbol") != selected_coin:
+                continue
+            t_time = pd.to_datetime(t.get("time"), errors="coerce")
+            t_price = t.get("price", None)
+            if pd.isna(t_time) or t_price is None:
+                continue
+            try:
+                p = float(t_price)
+            except Exception:
+                continue
+            if t.get("type") == "buy":
+                buy_x.append(t_time)
+                buy_y.append(p)
+            elif t.get("type") == "sell":
+                sell_x.append(t_time)
+                sell_y.append(p)
+
+        if buy_x:
+            fig.add_trace(
+                go.Scatter(
+                    x=buy_x,
+                    y=buy_y,
+                    mode="markers",
+                    name="매수 체결",
+                    marker=dict(symbol="triangle-up", size=11, color="#ff4b4b"),
+                ),
+                row=1,
+                col=1,
+            )
+        if sell_x:
+            fig.add_trace(
+                go.Scatter(
+                    x=sell_x,
+                    y=sell_y,
+                    mode="markers",
+                    name="매도 체결",
+                    marker=dict(symbol="triangle-down", size=11, color="#00cc96"),
+                ),
+                row=1,
+                col=1,
+            )
+
         # RSI 하단 보조지표
         if "rsi14" in df_chart.columns:
             fig.add_trace(
@@ -1186,13 +1376,28 @@ else:
                 row=2,
                 col=1,
             )
-            # 30 / 70 레벨선
-            fig.add_hline(y=30, line_dash="dash", line_color="gray", row=2, col=1)
+            # 사이드바 슬라이더 기준선 + 과열 기준선
+            fig.add_hline(y=breakout_rsi_threshold, line_dash="dash", line_color="#ff4b4b", row=2, col=1)
             fig.add_hline(y=70, line_dash="dash", line_color="gray", row=2, col=1)
             fig.update_yaxes(range=[0, 100], row=2, col=1)
 
+        if "wpr" in df_chart.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=df_chart["timestamp"],
+                    y=df_chart["wpr"],
+                    name="WPR(14)",
+                    line=dict(color="#00D2FF"),
+                ),
+                row=3,
+                col=1,
+            )
+            fig.add_hline(y=breakout_wpr_threshold, line_dash="dash", line_color="#ff4b4b", row=3, col=1)
+            fig.add_hline(y=-20, line_dash="dash", line_color="gray", row=3, col=1)
+            fig.update_yaxes(range=[-100, 0], row=3, col=1)
+
         fig.update_layout(
-            height=700,
+            height=850,
             margin=dict(l=10, r=10, t=30, b=10),
             xaxis_rangeslider_visible=False,
         )

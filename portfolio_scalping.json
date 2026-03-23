@@ -1,6 +1,37 @@
 {
-    "balance": 50000.0,
-    "holdings": {},
+    "balance": 31806.07604357439,
+    "holdings": {
+        "FDUSD/USDT": {
+            "amount": 3001.5007503751876,
+            "avg_price": 0.9994999999999999,
+            "total_cost": 3000.0
+        },
+        "PEPE/USDT": {
+            "amount": 906344410.876133,
+            "avg_price": 3.31e-06,
+            "total_cost": 3000.0
+        },
+        "BNB/USDT": {
+            "amount": 4.753228234175711,
+            "avg_price": 631.15,
+            "total_cost": 3000.0
+        },
+        "USD1/USDT": {
+            "amount": 3000.9002700810242,
+            "avg_price": 0.9997,
+            "total_cost": 3000.0
+        },
+        "PAXG/USDT": {
+            "amount": 0.6701349875243203,
+            "avg_price": 4476.71,
+            "total_cost": 3000.0
+        },
+        "USDC/USDT": {
+            "amount": 3000.0,
+            "avg_price": 1.0,
+            "total_cost": 3000.0
+        }
+    },
     "history": [
         {
             "time": "2026-01-28 22:08:30",
@@ -17,6 +48,139 @@
             "price": 127.18,
             "invest": 100.0,
             "amount": 0.7862871520679352
+        },
+        {
+            "time": "2026-03-23 00:03:00",
+            "type": "buy",
+            "symbol": "TAO/USDT",
+            "price": 274.4,
+            "invest": 3000.0,
+            "amount": 10.932944606413995
+        },
+        {
+            "time": "2026-03-23 00:14:29",
+            "type": "buy",
+            "symbol": "FDUSD/USDT",
+            "price": 0.9995,
+            "invest": 3000.0,
+            "amount": 3001.5007503751876
+        },
+        {
+            "time": "2026-03-23 00:15:56",
+            "type": "buy",
+            "symbol": "SUI/USDT",
+            "price": 0.9251,
+            "invest": 3000.0,
+            "amount": 3242.8926602529455
+        },
+        {
+            "time": "2026-03-23 00:16:44",
+            "type": "buy",
+            "symbol": "DOGE/USDT",
+            "price": 0.09159,
+            "invest": 3000.0,
+            "amount": 32754.667540124465
+        },
+        {
+            "time": "2026-03-23 00:18:37",
+            "type": "buy",
+            "symbol": "PEPE/USDT",
+            "price": 3.31e-06,
+            "invest": 3000.0,
+            "amount": 906344410.876133
+        },
+        {
+            "time": "2026-03-23 00:18:54",
+            "type": "buy",
+            "symbol": "BNB/USDT",
+            "price": 631.15,
+            "invest": 3000.0,
+            "amount": 4.753228234175711
+        },
+        {
+            "time": "2026-03-23 00:19:30",
+            "type": "buy",
+            "symbol": "USD1/USDT",
+            "price": 0.9997,
+            "invest": 3000.0,
+            "amount": 3000.9002700810242
+        },
+        {
+            "time": "2026-03-23 00:23:35",
+            "type": "buy",
+            "symbol": "BTC/USDT",
+            "price": 68867.52,
+            "invest": 3000.0,
+            "amount": 0.043561899717021894
+        },
+        {
+            "time": "2026-03-23 00:29:32",
+            "type": "buy",
+            "symbol": "PAXG/USDT",
+            "price": 4476.71,
+            "invest": 3000.0,
+            "amount": 0.6701349875243203
+        },
+        {
+            "time": "2026-03-23 00:43:14",
+            "type": "buy",
+            "symbol": "TRX/USDT",
+            "price": 0.3146,
+            "invest": 3000.0,
+            "amount": 9535.918626827717
+        },
+        {
+            "time": "2026-03-23 00:48:54",
+            "type": "buy",
+            "symbol": "USDC/USDT",
+            "price": 1.0,
+            "invest": 3000.0,
+            "amount": 3000.0
+        },
+        {
+            "time": "2026-03-23 00:49:11",
+            "type": "sell",
+            "symbol": "TAO/USDT",
+            "price": 271.6,
+            "amount": 10.932944606413995,
+            "total": 2969.3877551020414,
+            "pnl_pct": -1.0204081632652895
+        },
+        {
+            "time": "2026-03-23 08:32:28",
+            "type": "sell",
+            "symbol": "BTC/USDT",
+            "price": 68104.67,
+            "amount": 0.043561899717021894,
+            "total": 2966.7688048008695,
+            "pnl_pct": -1.10770650663768
+        },
+        {
+            "time": "2026-03-23 08:45:04",
+            "type": "sell",
+            "symbol": "DOGE/USDT",
+            "price": 0.09039,
+            "amount": 32754.667540124465,
+            "total": 2960.6943989518504,
+            "pnl_pct": -1.310186701604986
+        },
+        {
+            "time": "2026-03-23 08:45:04",
+            "type": "sell",
+            "symbol": "TRX/USDT",
+            "price": 0.3111,
+            "amount": 9535.918626827717,
+            "total": 2966.624284806103,
+            "pnl_pct": -1.1125238397965855
+        },
+        {
+            "time": "2026-03-23 08:45:04",
+            "type": "sell",
+            "symbol": "SUI/USDT",
+            "price": 0.9074,
+            "amount": 3242.8926602529455,
+            "total": 2942.6007999135227,
+            "pnl_pct": -1.913306669549243
         }
     ],
     "trades": []

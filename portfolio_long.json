@@ -1,5 +1,34 @@
 {
-    "balance": 50000.0,
-    "holdings": {},
-    "trades": []
+    "balance": 48000.0,
+    "holdings": {
+        "USDC/USDT": {
+            "amount": 999.9000099990001,
+            "avg_price": 1.0001,
+            "total_cost": 1000.0
+        },
+        "BANANAS31/USDT": {
+            "amount": 73329.91127080737,
+            "avg_price": 0.013637,
+            "total_cost": 1000.0
+        }
+    },
+    "trades": [],
+    "history": [
+        {
+            "time": "2026-03-23 08:32:33",
+            "type": "buy",
+            "symbol": "USDC/USDT",
+            "price": 1.0001,
+            "invest": 1000.0,
+            "amount": 999.9000099990001
+        },
+        {
+            "time": "2026-03-23 08:32:33",
+            "type": "buy",
+            "symbol": "BANANAS31/USDT",
+            "price": 0.013637,
+            "invest": 1000.0,
+            "amount": 73329.91127080737
+        }
+    ]
 }
