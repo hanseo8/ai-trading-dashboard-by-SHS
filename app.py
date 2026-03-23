@@ -5,7 +5,7 @@ import pandas_ta as ta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Tuple
 import time
 import math
 import textwrap
@@ -196,6 +196,7 @@ def get_data(symbol: str, timeframe: str = "1h", limit: int = 200) -> Optional[p
 
         bb = ta.bbands(df["close"], length=20, std=2.0)
         df = pd.concat([df, bb], axis=1)
+        bu, bl, bm = _bbands_column_triplet(bb)
         
         # [나만의 기법] BB(15, 2.4) 추가 (유지 - 레거시 참조용 혹은 필요시 사용)
         bb_my = ta.bbands(df["close"], length=15, std=2.4)
@@ -203,10 +204,8 @@ def get_data(symbol: str, timeframe: str = "1h", limit: int = 200) -> Optional[p
         
         # [스캘핑 업그레이드] 
         # 1. 밴드폭 (Squeeze 감지용): (Upper - Lower) / Middle
-        # ta.bbands 결과 컬럼명 확인 필요. 보통 BBU_*, BBL_*, BBM_*, BBM_20_2.0
-        # bb 변수 사용 (20, 2)
-        if "BBU_20_2.0" in df.columns and "BBL_20_2.0" in df.columns and "BBM_20_2.0" in df.columns:
-            df["bb_width"] = (df["BBU_20_2.0"] - df["BBL_20_2.0"]) / df["BBM_20_2.0"]
+        if bu and bl and bm and bu in df.columns and bl in df.columns and bm in df.columns:
+            df["bb_width"] = (df[bu] - df[bl]) / df[bm]
         else:
             df["bb_width"] = 0.0
             
@@ -272,6 +271,17 @@ def get_best_bid(_exchange, symbol):
         return None
 
 
+def _bbands_column_triplet(bb_df: Optional[pd.DataFrame]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """pandas_ta bbands 컬럼명은 버전에 따라 BBU_20_2.0 또는 BBU_20_2.0_2.0 등으로 달라짐."""
+    if bb_df is None or bb_df.empty:
+        return None, None, None
+    cols = list(bb_df.columns)
+    upper = next((c for c in cols if str(c).startswith("BBU_")), None)
+    lower = next((c for c in cols if str(c).startswith("BBL_")), None)
+    mid = next((c for c in cols if str(c).startswith("BBM_")), None)
+    return upper, lower, mid
+
+
 @st.cache_resource
 def get_breakout_exchange() -> ccxt.Exchange:
     """급등 전조 탐지: 공개 시세 전용 호스트(data-api.binance.vision)로 451(지역 차단) 우회.
@@ -317,6 +327,12 @@ def scan_breakout(
         df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(float)
 
         bb = ta.bbands(df["close"], length=20, std=2.0)
+        if bb is None or bb.empty:
+            return False, 0.0, 0.0, 0.0, "볼린저 밴드 산출 실패", 0.0
+        bu_col, bl_col, bm_col = _bbands_column_triplet(bb)
+        if not bu_col or not bl_col or not bm_col:
+            return False, 0.0, 0.0, 0.0, "볼린저 밴드 컬럼 인식 실패", 0.0
+
         df = pd.concat([df, bb], axis=1)
         df["rsi14"] = ta.rsi(df["close"], length=14)
         df["wpr14"] = ta.willr(df["high"], df["low"], df["close"], length=14)
@@ -327,9 +343,9 @@ def scan_breakout(
             return False, 0.0, 0.0, 0.0, "지표 계산 데이터 부족", 0.0
 
         latest = df.iloc[-1]
-        bb_upper = latest.get("BBU_20_2.0")
-        bb_lower = latest.get("BBL_20_2.0")
-        bb_mid = latest.get("BBM_20_2.0")
+        bb_upper = latest.get(bu_col)
+        bb_lower = latest.get(bl_col)
+        bb_mid = latest.get(bm_col)
         rsi_val = float(latest.get("rsi14", 0.0))
         wpr_val = float(latest.get("wpr14", -100.0))
 
