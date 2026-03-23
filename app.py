@@ -15,6 +15,57 @@ import feedparser
 import paper_trading as pt  # <--- CRITICAL FIX
 import daily_equity as de
 
+
+def _get_streamlit_secret(key: str, default: str = "") -> str:
+    """Streamlit Cloud secrets.toml 또는 로컬 secrets."""
+    try:
+        if hasattr(st, "secrets") and st.secrets:
+            v = st.secrets.get(key, default)
+            return str(v).strip() if v is not None and str(v).strip() else default
+    except Exception:
+        pass
+    return default
+
+
+def test_binance_api_connection(
+    api_key: str,
+    api_secret: str,
+    market_type: str,
+    use_testnet: bool,
+) -> Tuple[bool, str, Optional[dict]]:
+    """바이낸스 API 키로 잔고 조회 테스트. (ok, 메시지, USDT 스냅샷)"""
+    ak = (api_key or "").strip()
+    sec = (api_secret or "").strip()
+    if not ak or not sec:
+        return False, "API Key와 Secret을 모두 입력하세요.", None
+    try:
+        ex = ccxt.binance(
+            {
+                "apiKey": ak,
+                "secret": sec,
+                "enableRateLimit": True,
+                "options": {
+                    "defaultType": "future" if market_type == "future" else "spot",
+                    "adjustForTimeDifference": True,
+                },
+                "timeout": 30000,
+            }
+        )
+        if use_testnet:
+            ex.set_sandbox_mode(True)
+        ex.load_markets()
+        bal = ex.fetch_balance()
+        usdt = bal.get("USDT") or {}
+        snap = {
+            "usdt_total": usdt.get("total"),
+            "usdt_free": usdt.get("free"),
+            "usdt_used": usdt.get("used"),
+        }
+        return True, "연동 성공: 잔고 조회에 성공했습니다.", snap
+    except Exception as e:
+        return False, f"연동 실패: {e}", None
+
+
 # 페이지 설정
 st.set_page_config(page_title="급등 전조 탐지 대시보드", layout="wide")
 
@@ -140,6 +191,60 @@ st.markdown(f"<!-- Cache Buster: {datetime.now(timezone.utc)} -->", unsafe_allow
 apply_custom_styles()
 
 # ---------------------------------------------------------------------------
+# 최상단: 연습모드 / 실제모드 (노란 강조 느낌의 모드 바)
+# ---------------------------------------------------------------------------
+_em_row = st.columns([0.06, 0.88, 0.06])
+with _em_row[1]:
+    _exec_label = st.radio(
+        "운용 모드",
+        ["연습모드 (모의)", "실제모드 (API)"],
+        horizontal=True,
+        key="execution_mode_radio",
+        help=(
+            "연습모드: 앱 내 모의 매매·포트폴리오만 사용. "
+            "실제모드: 바이낸스 API 키로 계정 연동(잔고 조회). 실거래 주문은 별도 옵션으로 제한합니다."
+        ),
+    )
+is_real_mode = _exec_label.startswith("실제")
+execution_mode: str = "real" if is_real_mode else "practice"
+st.session_state["execution_mode"] = execution_mode
+
+if is_real_mode:
+    st.markdown(
+        """
+<div style="
+  background: linear-gradient(90deg, rgba(255,176,32,0.18), rgba(26,26,30,0.95));
+  border: 2px solid #ffb020;
+  border-radius: 10px;
+  padding: 12px 18px;
+  margin-bottom: 14px;
+  text-align: center;
+">
+  <span style="color:#ffb020; font-weight:800; font-size:1.15em; letter-spacing:0.05em;">실제모드</span>
+  <span style="color:#bbb; font-size:0.95em;"> — API 연동 후 실계좌 데이터를 사용합니다. 키는 세션에만 저장됩니다(서버 secrets 권장).</span>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        """
+<div style="
+  background: linear-gradient(90deg, rgba(0,255,163,0.14), rgba(26,26,30,0.95));
+  border: 2px solid #00ffa3;
+  border-radius: 10px;
+  padding: 12px 18px;
+  margin-bottom: 14px;
+  text-align: center;
+">
+  <span style="color:#00ffa3; font-weight:800; font-size:1.15em; letter-spacing:0.05em;">연습모드</span>
+  <span style="color:#bbb; font-size:0.95em;"> — 모의 매매·가상 포트폴리오만 사용합니다.</span>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+# ---------------------------------------------------------------------------
 # 최상단: 현물 / 선물(USDT-M) — 시세·스캔·차트·모의매매 심볼 형식과 연동
 # ---------------------------------------------------------------------------
 _mkt_row = st.columns([0.12, 0.76, 0.12])
@@ -156,6 +261,85 @@ with _mkt_row[1]:
     )
 market_type: str = "spot" if _mt_label.startswith("현물") else "future"
 st.session_state["market_type"] = market_type
+
+# 실제모드: API 설정 패널 (마켓 유형에 맞춰 테스트)
+if is_real_mode:
+    _api_expanded = not bool(st.session_state.get("binance_api_ok", False))
+    with st.expander("바이낸스 API 설정 · 연동 테스트", expanded=_api_expanded):
+        st.warning(
+            "API Secret은 **절대** 공개 저장소에 올리지 마세요. "
+            "Streamlit Cloud는 **앱 설정 → Secrets** (`BINANCE_API_KEY`, `BINANCE_API_SECRET`) 사용을 권장합니다."
+        )
+        if "bin_api_key_field" not in st.session_state:
+            st.session_state["bin_api_key_field"] = _get_streamlit_secret("BINANCE_API_KEY")
+        _ak = st.text_input(
+            "API Key",
+            key="bin_api_key_field",
+            autocomplete="off",
+        )
+        _sec = st.text_input(
+            "API Secret",
+            type="password",
+            key="bin_api_secret_field",
+            help="입력하지 않으면 연동 테스트 시 이전에 세션에 저장된 Secret을 사용합니다.",
+        )
+        _testnet = st.checkbox(
+            "테스트넷(샌드박스) 사용",
+            value=False,
+            key="bin_use_testnet",
+            help="Binance 테스트넷 키일 때만 켜세요.",
+        )
+        _b1, _b2, _ = st.columns([1, 1, 2])
+        with _b1:
+            _test_clicked = st.button("연동 테스트", type="primary", key="btn_binance_connect_test")
+        with _b2:
+            if st.session_state.get("binance_api_ok"):
+                if st.button("연동 해제", key="btn_binance_disconnect"):
+                    st.session_state["binance_api_ok"] = False
+                    for _k in (
+                        "binance_api_key",
+                        "binance_api_secret",
+                        "binance_usdt_snapshot",
+                        "live_trading_enabled",
+                    ):
+                        st.session_state.pop(_k, None)
+                    st.toast("API 연동을 해제했습니다.")
+                    st.rerun()
+
+        if _test_clicked:
+            _sk = (_sec or "").strip() or st.session_state.get("binance_api_secret", "")
+            _ok, _msg, _snap = test_binance_api_connection(
+                _ak, _sk, market_type, _testnet
+            )
+            if _ok:
+                st.session_state["binance_api_ok"] = True
+                st.session_state["binance_api_key"] = _ak.strip()
+                if (_sec or "").strip():
+                    st.session_state["binance_api_secret"] = (_sec or "").strip()
+                st.session_state["binance_usdt_snapshot"] = _snap
+                st.success(_msg)
+                if _snap:
+                    st.info(
+                        f"USDT — free: {_snap.get('usdt_free')}, "
+                        f"used: {_snap.get('usdt_used')}, total: {_snap.get('usdt_total')}"
+                    )
+            else:
+                st.session_state["binance_api_ok"] = False
+                st.error(_msg)
+
+        if st.session_state.get("binance_api_ok"):
+            if "live_trading_enabled" not in st.session_state:
+                st.session_state["live_trading_enabled"] = False
+            st.checkbox(
+                "실거래 주문 허용 (위험·신중히)",
+                key="live_trading_enabled",
+                help="켜도 현재 버전은 자동 매매 로직이 실제 주문을 보내지 않습니다. 다음 단계에서 주문 연동 예정입니다.",
+            )
+            st.caption(
+                "실거래 자동 주문은 체결·수수료·청산 리스크가 큽니다. 별도 검증 후에만 활성화할 예정입니다."
+            )
+        else:
+            st.info("실제모드에서 거래소와 연결하려면 **연동 테스트**를 통과해야 합니다.")
 
 st.markdown(f"""
 <div style='text-align: center; margin-bottom: 30px;'>
@@ -551,11 +735,35 @@ with st.sidebar:
         st.success("모의 자금이 반영되었습니다.")
         st.rerun()
 
+    if market_type == "future":
+        st.divider()
+        st.subheader("⚙️ 선물 레버리지 (USDT-M)")
+        futures_leverage = st.slider(
+            "레버리지 (배) — 모의 전용",
+            min_value=1,
+            max_value=125,
+            value=10,
+            step=1,
+            key="futures_leverage_sidebar",
+            help=(
+                "이 값은 앱 안 모의 매매 계산에만 쓰이며, 바이낸스 계정의 실제 레버리지·종목별 상한과 자동 동기화되지 않습니다. "
+                "실거래소는 종목마다 최대 레버리지가 다르고(예: 일부 알트는 20x 등), "
+                "실제 설정·브래킷 조회는 API 키가 필요합니다."
+            ),
+        )
+        st.caption(
+            "모의: 증거금만 차감·명목 기준 손익. "
+            "바이낸스 종목별 최대 레버리지/브래킷과는 연동되지 않습니다 (슬라이더 상한 125는 UI일 뿐)."
+        )
+    else:
+        futures_leverage = 1
+
     st.divider()
     st.subheader("익절 / 손절 (모의)")
     breakout_tp = st.slider("익절 (%)", 0.3, 10.0, 1.25, 0.05, key="tp_breakout_only")
     breakout_sl = st.slider("손절 (%)", 0.3, 10.0, 0.8, 0.05, key="sl_breakout_only")
-    trade_amount = st.slider("1회 매수 금액 (USDT)", 100.0, 5000.0, 5000.0, 100.0, key="trade_amt_breakout")
+    _ta_label = "1회 증거금·마진 (USDT)" if market_type == "future" else "1회 매수 금액 (USDT)"
+    trade_amount = st.slider(_ta_label, 100.0, 5000.0, 5000.0, 100.0, key="trade_amt_breakout")
 
     st.divider()
     top_n = st.slider("스캔 개수 (거래량 상위)", min_value=5, max_value=50, value=20, step=5)
@@ -658,9 +866,14 @@ cached_prices = st.session_state.get("current_prices", {})
 initial_equity = pf_init["balance"]
 
 for symbol, h in pf_init["holdings"].items():
-    # 현재가가 있으면 현재가, 없으면 평단가(매수비용)로 계산
-    c_price = cached_prices.get(symbol, h["avg_price"])
-    initial_equity += h["amount"] * c_price
+    c_price = float(cached_prices.get(symbol, h["avg_price"]))
+    if h.get("margin_used") is not None:
+        m = float(h["margin_used"])
+        amt = float(h["amount"])
+        ap = float(h["avg_price"])
+        initial_equity += m + amt * (c_price - ap)
+    else:
+        initial_equity += float(h["amount"]) * c_price
 
 # 수익률: 모의 자금(starting_capital) 설정 시에만 표시 (5만불 기본 제거)
 _start_cap = float(pf_init.get("starting_capital", 0.0))
@@ -933,7 +1146,12 @@ try:
                 bid_price = get_best_bid(exchange, symbol)
                 entry_price = float(bid_price) if bid_price else lp
                 success, msg = pt.buy_coin(
-                    symbol, entry_price, invest_amount=float(trade_amount), filename=portfolio_file
+                    symbol,
+                    entry_price,
+                    invest_amount=float(trade_amount),
+                    filename=portfolio_file,
+                    leverage=float(futures_leverage),
+                    futures_mode=(market_type == "future"),
                 )
                 if success:
                     st.toast(f"✅ {symbol} 매수 완료! ({entry_price})")
