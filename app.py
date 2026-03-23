@@ -517,37 +517,44 @@ apply_custom_styles()
 # 최상단: 운용모드 + 거래마켓 (한 줄 선택 바)
 # ---------------------------------------------------------------------------
 st.markdown(
-    '<div class="top-mode-strip">빠른 선택 · 운용 모드와 거래 마켓을 한 번에 설정하세요</div>',
+    '<div class="top-mode-strip">빠른 선택 · 운용모드/거래마켓을 한 줄에서 바로 전환</div>',
     unsafe_allow_html=True,
 )
-_ctl_cols = st.columns([1, 1], gap="large")
-with _ctl_cols[0]:
-    _exec_label = st.radio(
-        "운용 모드",
-        ["연습모드 (모의)", "실제모드 (API)"],
-        horizontal=True,
-        key="execution_mode_radio",
-        help=(
-            "연습모드: 앱 내 모의 매매·포트폴리오만 사용. "
-            "실제모드: 바이낸스 API 키로 계정 연동(잔고 조회). 실거래 주문은 별도 옵션으로 제한합니다."
-        ),
-    )
-with _ctl_cols[1]:
-    _mt_label = st.radio(
-        "거래 마켓",
-        ["현물 (Spot)", "선물 (USDT-M)"],
-        horizontal=True,
-        key="app_market_type_radio",
-        help=(
-            "**현물**: 공개 시세(data-api.binance.vision) 우회, 지연 가능. "
-            "**선물**: USDT 무기한 — 심볼은 `BTC/USDT:USDT` 형식. 일부 지역에서 API(451) 차단될 수 있습니다."
-        ),
-    )
+_mode_market_options = [
+    "연습·현물",
+    "연습·선물",
+    "실제·현물",
+    "실제·선물",
+]
+_default_combo = (
+    "실제·선물"
+    if st.session_state.get("execution_mode") == "real" and st.session_state.get("market_type") == "future"
+    else "실제·현물"
+    if st.session_state.get("execution_mode") == "real"
+    else "연습·선물"
+    if st.session_state.get("market_type") == "future"
+    else "연습·현물"
+)
+if st.session_state.get("top_mode_market_combo") not in _mode_market_options:
+    st.session_state["top_mode_market_combo"] = _default_combo
 
-is_real_mode = _exec_label.startswith("실제")
+_combo = st.radio(
+    "운용모드 / 거래마켓",
+    _mode_market_options,
+    horizontal=True,
+    key="top_mode_market_combo",
+    help=(
+        "연습: 모의 포트폴리오 사용, 실제: API 연동 기반. "
+        "현물: /USDT 심볼, 선물: /USDT:USDT 심볼."
+    ),
+)
+
+is_real_mode = _combo.startswith("실제")
 execution_mode: str = "real" if is_real_mode else "practice"
+market_type: str = "future" if _combo.endswith("선물") else "spot"
+_exec_label = "실제모드 (API)" if is_real_mode else "연습모드 (모의)"
+_mt_label = "선물 (USDT-M)" if market_type == "future" else "현물 (Spot)"
 st.session_state["execution_mode"] = execution_mode
-market_type: str = "spot" if _mt_label.startswith("현물") else "future"
 st.session_state["market_type"] = market_type
 
 if is_real_mode:
