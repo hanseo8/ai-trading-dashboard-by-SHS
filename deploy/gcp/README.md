@@ -125,6 +125,8 @@ git pull
 docker build -t streamlit-dash .
 ```
 
+`pandas-ta` 설치 오류가 나면 저장소를 `git pull` 로 최신화한 뒤 다시 `docker build` 하세요. (Dockerfile이 Python 3.12 기준입니다.)
+
 - **e2-micro** 에서 빌드가 터지거나 느리면:  
   - VM 사양을 **e2-small** 로 올리거나,  
   - 로컬 PC에서 빌드 후 **Artifact Registry**에 올리는 방식을 쓰면 됩니다. (고급)

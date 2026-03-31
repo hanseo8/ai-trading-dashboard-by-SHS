@@ -1,5 +1,6 @@
 # 펜세오 자동매매 대시보드 — GCP(Compute Engine / Cloud Run) 상시 실행용
-FROM python:3.11-slim
+# pandas-ta 최신은 Python 3.12+ 요구 → 3.12 베이스 사용
+FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
