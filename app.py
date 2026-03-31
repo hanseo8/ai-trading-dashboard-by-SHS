@@ -513,6 +513,11 @@ st.markdown(f"<!-- Cache Buster: {datetime.now(timezone.utc)} -->", unsafe_allow
 
 apply_custom_styles()
 
+# 설정 잠금 상태 (상단/사이드바 공통)
+if "settings_lock" not in st.session_state:
+    st.session_state["settings_lock"] = False
+settings_locked = bool(st.session_state.get("settings_lock", False))
+
 # ---------------------------------------------------------------------------
 # 최상단: 운용모드 + 거래마켓 (한 줄 선택 바)
 # ---------------------------------------------------------------------------
@@ -536,6 +541,7 @@ with _row[0]:
         horizontal=True,
         key="execution_mode_radio",
         help="연습: 모의 포트폴리오만 사용 / 실제: API 연동(실거래는 별도 허용 필요)",
+        disabled=settings_locked,
     )
 with _row[1]:
     _mt_label = st.radio(
@@ -545,6 +551,7 @@ with _row[1]:
         horizontal=True,
         key="app_market_type_radio",
         help="현물: /USDT 심볼, 선물: /USDT:USDT 심볼",
+        disabled=settings_locked,
     )
 
 is_real_mode = _mode_label.startswith("실제")
@@ -850,6 +857,20 @@ def _bbands_column_triplet(bb_df: Optional[pd.DataFrame]) -> Tuple[Optional[str]
     return upper, lower, mid
 
 
+def _bbands_asymmetric_series(
+    close: pd.Series,
+    length: int,
+    upper_mult: float,
+    lower_mult: float,
+) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """상·하단 표준편차 배수를 각각 둔 볼린저 밴드 (중심선 = SMA)."""
+    mid = close.rolling(window=int(length), min_periods=int(length)).mean()
+    std = close.rolling(window=int(length), min_periods=int(length)).std()
+    upper = mid + float(upper_mult) * std
+    lower = mid - float(lower_mult) * std
+    return upper, mid, lower
+
+
 @st.cache_resource
 def get_breakout_exchange(market_type: str = "spot") -> ccxt.Exchange:
     """급등 전조 탐지용 거래소. 현물은 vision 우회, 선물은 USDT-M fapi."""
@@ -888,8 +909,12 @@ def scan_breakout(
     rsi_threshold: float = 50.0,
     wpr_threshold: float = -85.0,
     market_type: str = "spot",
+    bb_4h_length: int = 20,
+    bb_4h_upper_std: float = 2.0,
+    bb_4h_lower_std: float = 2.0,
+    bb_4h_squeeze_max: float = 0.05,
 ):
-    """볼린저 밴드 수축 + 거래량 스파이크 + RSI/WPR 조건 탐지"""
+    """4시간 볼린저 수축 + (탐지 타임프레임) RSI/WPR/거래량 조건 탐지"""
     try:
         exchange = get_breakout_exchange(market_type)
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
@@ -900,14 +925,6 @@ def scan_breakout(
 
         df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(float)
 
-        bb = ta.bbands(df["close"], length=20, std=2.0)
-        if bb is None or bb.empty:
-            return False, 0.0, 0.0, 0.0, "볼린저 밴드 산출 실패", 0.0
-        bu_col, bl_col, bm_col = _bbands_column_triplet(bb)
-        if not bu_col or not bl_col or not bm_col:
-            return False, 0.0, 0.0, 0.0, "볼린저 밴드 컬럼 인식 실패", 0.0
-
-        df = pd.concat([df, bb], axis=1)
         df["rsi14"] = ta.rsi(df["close"], length=14)
         df["wpr14"] = ta.willr(df["high"], df["low"], df["close"], length=14)
         df["vol_ma20"] = df["volume"].rolling(window=20).mean()
@@ -917,23 +934,47 @@ def scan_breakout(
             return False, 0.0, 0.0, 0.0, "지표 계산 데이터 부족", 0.0
 
         latest = df.iloc[-1]
-        bb_upper = latest.get(bu_col)
-        bb_lower = latest.get(bl_col)
-        bb_mid = latest.get(bm_col)
         rsi_val = float(latest.get("rsi14", 0.0))
         wpr_val = float(latest.get("wpr14", -100.0))
+        last_px = float(latest["close"])
 
+        # --- 4시간 봉: 볼린저(상·하단 배수 분리)로 수축 판정 ---
+        _bb_len = max(5, int(bb_4h_length))
+        _4h_limit = max(200, _bb_len + 40)
+        ohlcv_4h = exchange.fetch_ohlcv(symbol, timeframe="4h", limit=_4h_limit)
+        df4 = pd.DataFrame(ohlcv_4h, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        if df4.empty or len(df4) < _bb_len + 2:
+            return False, 0.0, rsi_val, wpr_val, "4h 데이터 부족", last_px
+
+        df4["close"] = pd.to_numeric(df4["close"], errors="coerce")
+        bu_s, bm_s, bl_s = _bbands_asymmetric_series(
+            df4["close"],
+            length=_bb_len,
+            upper_mult=float(bb_4h_upper_std),
+            lower_mult=float(bb_4h_lower_std),
+        )
+        df4["bb_u"] = bu_s
+        df4["bb_m"] = bm_s
+        df4["bb_l"] = bl_s
+        df4 = df4.dropna().reset_index(drop=True)
+        if df4.empty:
+            return False, 0.0, rsi_val, wpr_val, "4h 볼린저 계산 실패", last_px
+
+        l4 = df4.iloc[-1]
+        bb_upper = float(l4["bb_u"])
+        bb_lower = float(l4["bb_l"])
+        bb_mid = float(l4["bb_m"])
         if pd.isna(bb_upper) or pd.isna(bb_lower) or pd.isna(bb_mid) or bb_mid == 0:
-            return False, 0.0, rsi_val, wpr_val, "볼린저 밴드 계산 실패", float(latest["close"])
+            return False, 0.0, rsi_val, wpr_val, "4h 볼린저 값 오류", last_px
 
         bandwidth = float((bb_upper - bb_lower) / bb_mid)
-        is_squeeze = bandwidth < 0.05
+        is_squeeze = bandwidth < float(bb_4h_squeeze_max)
         is_vol_spike = bool(latest["volume"] > (latest["vol_ma20"] * 3))
         is_rsi_bullish = rsi_val > rsi_threshold
         is_wpr_recover = wpr_val > wpr_threshold
 
         detected = bool(is_squeeze and is_vol_spike and is_rsi_bullish and is_wpr_recover)
-        return detected, bandwidth, rsi_val, wpr_val, "", float(latest["close"])
+        return detected, bandwidth, rsi_val, wpr_val, "", last_px
     except Exception as e:
         return False, 0.0, 0.0, 0.0, user_friendly_exchange_error(e, market_type), 0.0
 
@@ -1071,6 +1112,14 @@ with st.sidebar:
 
     _mt_side = "현물" if market_type == "spot" else "USDT-M 선물"
     st.caption(f"마켓: **{_mt_side}** (상단 라디오와 동일)")
+    st.toggle(
+        "🔐 설정 잠금 (실수로 값 변경 방지)",
+        key="settings_lock",
+        help="켜면 모드·마켓 및 주요 전략 설정 입력이 잠깁니다.",
+    )
+    settings_locked = bool(st.session_state.get("settings_lock", False))
+    if settings_locked:
+        st.caption("설정 잠금이 켜져 있습니다. 입력값 변경은 잠시 비활성화됩니다.")
 
     st.divider()
 
@@ -1087,6 +1136,7 @@ with st.sidebar:
         index=0,
         key=_tf_key,
         help="급등 전조 로직에 쓰는 봉 단위입니다.",
+        disabled=settings_locked,
     )
     breakout_limit = st.slider(
         "탐지 캔들 수",
@@ -1095,6 +1145,7 @@ with st.sidebar:
         value=80,
         step=10,
         key="breakout_limit_sidebar",
+        disabled=settings_locked,
     )
     breakout_rsi_threshold = st.slider(
         "RSI 기준값",
@@ -1104,6 +1155,7 @@ with st.sidebar:
         step=1,
         key="breakout_rsi_threshold",
         help="종가 RSI가 이 값을 넘으면 조건에 반영됩니다.",
+        disabled=settings_locked,
     )
     breakout_wpr_threshold = st.slider(
         "Williams %R 기준값",
@@ -1113,8 +1165,52 @@ with st.sidebar:
         step=1,
         key="breakout_wpr_threshold",
         help="WPR이 이 값보다 커야 조건에 반영됩니다.",
+        disabled=settings_locked,
     )
     st.caption("상세 Plotly 차트의 RSI/WPR 기준선도 위 값으로 즉시 반영됩니다.")
+
+    st.divider()
+    st.subheader("4시간 볼린저 밴드")
+    st.caption("수축 판정은 **4h 봉** 기준입니다. RSI·WPR·거래량은 위 **탐지 타임프레임** 기준입니다.")
+    bb_4h_length = st.slider(
+        "4h BB 기간",
+        min_value=5,
+        max_value=60,
+        value=20,
+        step=1,
+        key="bb_4h_length",
+        disabled=settings_locked,
+    )
+    bb_4h_upper_std = st.slider(
+        "4h BB 상단 (σ 배수)",
+        min_value=1.0,
+        max_value=3.5,
+        value=2.0,
+        step=0.1,
+        key="bb_4h_upper_std",
+        disabled=settings_locked,
+        help="중심선(SMA) 위쪽 밴드 폭 = 표준편차 × 이 값",
+    )
+    bb_4h_lower_std = st.slider(
+        "4h BB 하단 (σ 배수)",
+        min_value=1.0,
+        max_value=3.5,
+        value=2.0,
+        step=0.1,
+        key="bb_4h_lower_std",
+        disabled=settings_locked,
+        help="중심선(SMA) 아래쪽 밴드 폭 = 표준편차 × 이 값",
+    )
+    bb_4h_squeeze_max = st.slider(
+        "4h 수축 밴드폭 상한",
+        min_value=0.02,
+        max_value=0.20,
+        value=0.05,
+        step=0.01,
+        key="bb_4h_squeeze_max",
+        disabled=settings_locked,
+        help="(상단−하단)/중심 이 값 **미만**이면 볼린저 수축으로 봅니다.",
+    )
 
     st.divider()
 
@@ -1125,8 +1221,8 @@ with st.sidebar:
     else:
         st.subheader("익절 / 손절 (전략 %)")
         st.caption("모의 매매 시 가상 청산 기준. 실거래 자동주문은 별도 옵션·검증 후 적용.")
-    breakout_tp = st.slider("익절 (%)", 0.3, 10.0, 1.25, 0.05, key="tp_breakout_only")
-    breakout_sl = st.slider("손절 (%)", 0.3, 10.0, 0.8, 0.05, key="sl_breakout_only")
+    breakout_tp = st.slider("익절 (%)", 0.3, 10.0, 1.25, 0.05, key="tp_breakout_only", disabled=settings_locked)
+    breakout_sl = st.slider("손절 (%)", 0.3, 10.0, 0.8, 0.05, key="sl_breakout_only", disabled=settings_locked)
 
     st.divider()
 
@@ -1137,6 +1233,7 @@ with st.sidebar:
             "모의 매매 사용 (자동 매수·매도)",
             value=False,
             key="use_paper_breakout",
+            disabled=settings_locked,
         )
     else:
         st.subheader("매매·포지션 크기")
@@ -1145,6 +1242,7 @@ with st.sidebar:
             value=False,
             key="use_paper_breakout",
             help="실제모드에서도 가상 잔고로만 시뮬하려면 켜세요. 실주문은 상단 실거래 옵션과 별개입니다.",
+            disabled=settings_locked,
         )
 
     paper_cash = st.number_input(
@@ -1154,8 +1252,9 @@ with st.sidebar:
         value=0.0,
         step=100.0,
         key="paper_cash_breakout",
+        disabled=settings_locked,
     )
-    if st.button("모의 자금 입금(잔액 반영)", key="apply_paper_cash_btn"):
+    if st.button("모의 자금 입금(잔액 반영)", key="apply_paper_cash_btn", disabled=settings_locked):
         pf_cash = pt.load_portfolio(portfolio_file)
         pf_cash["balance"] = float(paper_cash)
         pf_cash["starting_capital"] = float(paper_cash)
@@ -1164,7 +1263,7 @@ with st.sidebar:
         st.rerun()
 
     _ta_label = "1회 증거금·마진 (USDT)" if market_type == "future" else "1회 매수 금액 (USDT)"
-    trade_amount = st.slider(_ta_label, 100.0, 5000.0, 5000.0, 100.0, key="trade_amt_breakout")
+    trade_amount = st.slider(_ta_label, 100.0, 5000.0, 5000.0, 100.0, key="trade_amt_breakout", disabled=settings_locked)
 
     if market_type == "future":
         st.divider()
@@ -1181,6 +1280,7 @@ with st.sidebar:
                 "실거래소는 종목마다 최대 레버리지가 다르고(예: 일부 알트는 20x 등), "
                 "실제 설정·브래킷 조회는 API 키가 필요합니다."
             ),
+            disabled=settings_locked,
         )
         st.caption(
             "모의: 증거금만 차감·명목 기준 손익. "
@@ -1191,7 +1291,7 @@ with st.sidebar:
 
     st.divider()
     st.subheader("스캔 범위")
-    top_n = st.slider("거래량 상위 종목 수", min_value=5, max_value=50, value=20, step=5)
+    top_n = st.slider("거래량 상위 종목 수", min_value=5, max_value=50, value=20, step=5, disabled=settings_locked)
     st.caption("데이터는 바이낸스 공개 시세(지연/누락 가능).")
 
     st.divider()
@@ -1201,6 +1301,7 @@ with st.sidebar:
         value=st.session_state.get("manual_symbol_query", ""),
         key="manual_symbol_query",
         placeholder="예: BTC, ETH, SOL",
+        disabled=settings_locked,
     )
     try:
         search_universe = load_tradeable_symbols(market_type)
@@ -1219,7 +1320,7 @@ with st.sidebar:
         st.caption("검색 결과가 없습니다.")
         selected_symbol = None
     else:
-        selected_symbol = st.selectbox("매수 종목", matched_symbols, key="manual_symbol_select")
+        selected_symbol = st.selectbox("매수 종목", matched_symbols, key="manual_symbol_select", disabled=settings_locked)
 
     manual_usdt = st.number_input(
         "주문 금액 (USDT)",
@@ -1228,21 +1329,23 @@ with st.sidebar:
         value=100.0,
         step=10.0,
         key="manual_buy_usdt",
+        disabled=settings_locked,
     )
     manual_target = st.radio(
         "주문 대상",
         ["모의 매수", "실거래 매수"],
         horizontal=True,
         key="manual_buy_target",
+        disabled=settings_locked,
     )
     if manual_target == "실거래 매수":
         st.caption("실거래는 실제모드 + API 연동 + 실거래 허용 + 아래 확인 2개가 모두 필요합니다.")
-        confirm_1 = st.checkbox("위험을 이해했고 실주문을 진행합니다.", key="manual_live_confirm_1")
-        confirm_2 = st.checkbox("심볼/금액/마켓을 확인했습니다.", key="manual_live_confirm_2")
+        confirm_1 = st.checkbox("위험을 이해했고 실주문을 진행합니다.", key="manual_live_confirm_1", disabled=settings_locked)
+        confirm_2 = st.checkbox("심볼/금액/마켓을 확인했습니다.", key="manual_live_confirm_2", disabled=settings_locked)
     else:
         confirm_1, confirm_2 = False, False
 
-    if st.button("🛒 검색 종목 매수", key="manual_buy_btn", use_container_width=True):
+    if st.button("🛒 검색 종목 매수", key="manual_buy_btn", use_container_width=True, disabled=settings_locked):
         if not selected_symbol:
             st.error("매수할 종목을 선택하세요.")
         else:
@@ -1294,7 +1397,7 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"주문 처리 중 오류: {user_friendly_exchange_error(e, market_type)}")
 
-    if st.button("🚀 급등 전조 스캔", key="scan_breakout_btn_sidebar", use_container_width=True):
+    if st.button("🚀 급등 전조 스캔", key="scan_breakout_btn_sidebar", use_container_width=True, disabled=settings_locked):
         raw_syms = (
             SIDEBAR_BREAKOUT_SCAN_SYMBOLS_FUTURE
             if market_type == "future"
@@ -1317,11 +1420,15 @@ with st.sidebar:
                 rsi_threshold=float(breakout_rsi_threshold),
                 wpr_threshold=float(breakout_wpr_threshold),
                 market_type=market_type,
+                bb_4h_length=int(bb_4h_length),
+                bb_4h_upper_std=float(bb_4h_upper_std),
+                bb_4h_lower_std=float(bb_4h_lower_std),
+                bb_4h_squeeze_max=float(bb_4h_squeeze_max),
             )
             breakout_rows.append({
                 "종목": ticker,
                 "상태": "🚨 탐지" if detected else ("⚠️ 오류" if err else "관망"),
-                "밴드폭": bw,
+                "4h밴드폭": bw,
                 "RSI": rsi,
                 "WPR": wpr,
                 "오류": err if err else "-",
@@ -1335,10 +1442,10 @@ with st.sidebar:
     
     st.divider()
     st.subheader("자동 갱신")
-    auto_refresh = st.checkbox("자동 새로고침 켜기", value=True)
+    auto_refresh = st.checkbox("자동 새로고침 켜기", value=True, disabled=settings_locked)
     rec_refresh = 20
     rec_msg = "추천: 20~30초 (급등 전조 스캔)"
-    refresh_sec = st.slider("갱신 주기(초)", 5, 120, rec_refresh, key="refresh_breakout_only")
+    refresh_sec = st.slider("갱신 주기(초)", 5, 120, rec_refresh, key="refresh_breakout_only", disabled=settings_locked)
     st.caption(f"💡 {rec_msg}")
     
     st.divider()
@@ -1544,6 +1651,10 @@ with col_main:
     st.markdown('<div class="stCard">', unsafe_allow_html=True) # 카드 시작
     _mt_tag = "현물" if market_type == "spot" else "USDT-M 선물"
     st.subheader(f"🔥 급등 전조 탐지 스캔 ({_mt_tag} / 거래량 상위 {top_n}개)")
+    st.caption(
+        f"볼린저 수축: **4h** (기간 {bb_4h_length}, 상·하 σ {bb_4h_upper_std:.1f} / {bb_4h_lower_std:.1f}, 수축상한 {bb_4h_squeeze_max:.2f}) · "
+        f"RSI/WPR/거래량: **{breakout_timeframe}**"
+    )
 
 # 기존 try-except 문을 아래처럼 수정해서 에러 내용을 확인합니다.
 try:
@@ -1609,6 +1720,10 @@ try:
             rsi_threshold=float(breakout_rsi_threshold),
             wpr_threshold=float(breakout_wpr_threshold),
             market_type=market_type,
+            bb_4h_length=int(bb_4h_length),
+            bb_4h_upper_std=float(bb_4h_upper_std),
+            bb_4h_lower_std=float(bb_4h_lower_std),
+            bb_4h_squeeze_max=float(bb_4h_squeeze_max),
         )
         if err:
             errors.append(f"{symbol}: {err}")
@@ -1626,7 +1741,7 @@ try:
             "종목": symbol,
             "현재가": lp,
             "진입 신호": display_signal,
-            "밴드폭": f"{bw:.3f}",
+            "4h밴드폭": f"{bw:.3f}",
             "RSI": round(float(rsi), 1) if rsi is not None else None,
             "WPR": round(float(wpr), 1) if wpr is not None else None,
         })
@@ -1733,7 +1848,7 @@ if breakout_rows:
     col_main.caption(f"최근 스캔 시각: {scan_time} | 탐지: {detected_count}/{len(breakout_rows)}")
 
     df_breakout = pd.DataFrame(breakout_rows)
-    df_breakout["밴드폭"] = df_breakout["밴드폭"].apply(lambda x: f"{x:.3f}")
+    df_breakout["4h밴드폭"] = df_breakout["4h밴드폭"].apply(lambda x: f"{x:.3f}")
     df_breakout["RSI"] = df_breakout["RSI"].apply(lambda x: f"{x:.1f}")
     df_breakout["WPR"] = df_breakout["WPR"].apply(lambda x: f"{x:.1f}")
     col_main.dataframe(df_breakout, use_container_width=True, hide_index=True)
@@ -1804,6 +1919,55 @@ else:
             row=1,
             col=1,
         )
+
+        # 4시간 볼린저(상·하단 배수 설정) — 가격 패널에 표시
+        df_4h_bb = get_data(
+            selected_coin,
+            timeframe="4h",
+            limit=300,
+            market_type=market_type,
+        )
+        if df_4h_bb is not None and len(df_4h_bb) >= int(bb_4h_length) + 2:
+            _bb_u, _bb_m, _bb_l = _bbands_asymmetric_series(
+                df_4h_bb["close"],
+                length=int(bb_4h_length),
+                upper_mult=float(bb_4h_upper_std),
+                lower_mult=float(bb_4h_lower_std),
+            )
+            _bb_style = dict(width=1.1)
+            fig.add_trace(
+                go.Scatter(
+                    x=df_4h_bb["timestamp"],
+                    y=_bb_u,
+                    name="BB 4h 상단",
+                    line=dict(color="rgba(180, 200, 255, 0.95)", **_bb_style),
+                    legendgroup="bb4h",
+                ),
+                row=1,
+                col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=df_4h_bb["timestamp"],
+                    y=_bb_m,
+                    name="BB 4h 중심",
+                    line=dict(color="rgba(160, 160, 180, 0.75)", dash="dot", **_bb_style),
+                    legendgroup="bb4h",
+                ),
+                row=1,
+                col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=df_4h_bb["timestamp"],
+                    y=_bb_l,
+                    name="BB 4h 하단",
+                    line=dict(color="rgba(180, 200, 255, 0.95)", **_bb_style),
+                    legendgroup="bb4h",
+                ),
+                row=1,
+                col=1,
+            )
 
         # 실제 매매 기록(선택 전략) 마커 오버레이: 왜 여기서 사졌는지 시각적으로 확인
         trade_hist = pt.load_portfolio(portfolio_file).get("history", [])
